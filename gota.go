@@ -1,5 +1,7 @@
 package gota
 
+// TODO: Rename package to 'gosh' ???? I am on the fence about it !
+
 import (
 	"bytes"
 	"fmt"
@@ -224,6 +226,93 @@ func GoToDefinition(file *checker.FileDefinition, position lexer.Position) (file
 	return fileName, reach
 }
 
+func GetDependenciesFilesForTemplateCallWithinWorkspace(workspace map[string]*parser.GroupStatementNode) (dependencies [][]string, errs []Error) {
+	templatesWithinWorkspace := make(map[string][]*checker.TemplateDefinition)
+
+	for fileName, scope := range workspace {
+		// get templates for each files
+		templatesDefinition := getRootTemplateDefinition(scope, fileName)
+
+		// convert it into map[string][]*TemplateDefinition, so that string = templateName; []*TemplateDefinition = related definition
+		for _, templateDef := range templatesDefinition {
+			templatesWithinWorkspace[templateDef.Name] = append(templatesWithinWorkspace[templateDef.Name], templateDef)
+		}
+	}
+
+	for fileName, scope := range workspace {
+		visitor := &extractTemplateUse{}
+		visitor.templatesWithinWorkspace = templatesWithinWorkspace
+		visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{ fileName })
+
+		parser.Walk(visitor, scope)
+	}
+
+	// TODO: implementation incomplete
+	panic("not yet implemented")
+}
+
+type extractTemplateUse struct {
+	isRootVisited					bool
+	templatesWithinWorkspace	map[string][]*checker.TemplateDefinition
+	dependencyFileNames			[][]string
+
+	singleFileDepencies			[]string
+}
+
+func (v *extractTemplateUse) Visit (node parser.AstNode) parser.Visitor {
+
+	switch n := node.(type) {
+	case *parser.GroupStatementNode:
+		if ! v.isRootVisited {
+			v.isRootVisited = true
+			return v
+		}
+
+		// Do not analyze within template node when they are not the root of the tree
+		if n.Kind == parser.KIND_DEFINE_TEMPLATE || n.Kind == parser.KIND_BLOCK_TEMPLATE {
+			return nil
+		}
+
+		return v
+
+	case *parser.TemplateStatementNode:
+		// Do not count other type of 'TemplateStatementNode' for the dependencies analysis
+		if n.Kind != parser.KIND_USE_TEMPLATE {
+			return nil
+		}
+
+		templateName := string(n.TemplateName.Value)
+		templatesFound, ok := v.templatesWithinWorkspace[templateName]
+		if !ok {
+			// when there is error, it is not the role of depency graph to report it 
+			// the only goal is report the depency graph and whether or not there is a cyclical depency
+			// the rest of the error (beside cyclical deps) are to be ignored and be handled
+			// by other form of analysis
+			return nil
+		}
+
+		v.dependencyFileNames = nil
+
+		for _, templateDef := range templatesFound {
+			// add template name to depency
+			fileName := templateDef.FileName
+
+			// explore parse tree of the 'template' in question to find its own depencies as well
+			visitor := &extractTemplateUse{}
+			visitor.templatesWithinWorkspace = v.templatesWithinWorkspace
+			visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{ fileName })
+
+			parser.Walk(visitor, templateDef.Node)		// Not sure about 'v', perhaps I should create another one
+
+			// append the result to global dependency graph 
+		}
+
+		return v
+	}
+
+	return nil
+}
+
 // Print in JSON format the AST node to the screen. Use a program like 'jq' for pretty formatting
 func Print(node ...parser.AstNode) {
 	str := parser.PrettyFormater(node)
@@ -266,9 +355,12 @@ func getRootTemplateDefinition(root *parser.GroupStatementNode, fileName string)
 		def.Range = templateScope.Range
 		def.FileName = fileName
 		def.IsValid = true
-		def.InputType = &checker.DataStructureDefinition{}
-		def.InputType.Name = "any"
-		def.InputType.IsValid = true
+
+		// TODO: REFACTOR THIS CODE COMMENTED BELOW
+
+		// def.InputType = &checker.DataStructureDefinition{}
+		// def.InputType.Name = "any"
+		// def.InputType.IsValid = true
 
 		listTemplateDefinition = append(listTemplateDefinition, def)
 		// listTemplateDefinition[templateName] = statement
@@ -287,13 +379,9 @@ func getWorkspaceTemplateDefinition(parsedFilesInWorkspace map[string]*parser.Gr
 		workspaceTemplateDefinition = append(workspaceTemplateDefinition, fileTemplateDefinition...)
 	}
 
-	/*
 	if workspaceTemplateDefinition == nil {
-		panic("'workspaceTemplateDefinition()' should never return a 'nil' workspace. return an empty map instead")
+		workspaceTemplateDefinition = []*checker.TemplateDefinition{}
 	}
-	*/
-
-	log.Printf("'getWorkspaceTemplateDefinition() res : %#v\n\n", workspaceTemplateDefinition)
 
 	return workspaceTemplateDefinition
 }

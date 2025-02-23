@@ -150,6 +150,7 @@ type GroupStatementNode struct {
 	parent		*GroupStatementNode		// use 'isRoot' to check that the node is the ROOT
 	ControlFlow AstNode
 	Statements  []AstNode
+	// ShortcutsNode struct { TemplateDefine, TemplateUse, VarDeclaration, CommentGoCode }
 	isRoot		bool			// only this is consistently enforced to determine whether a node is ROOT or not
 }
 

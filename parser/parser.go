@@ -1044,6 +1044,10 @@ func (p Parser) isRecursionMaxDepth() bool {
 }
 
 func NewParseError(token *lexer.Token, err error) *ParseError {
+	if token == nil {
+		panic("token cannot be nil while creating parse error")
+	}
+
 	e := &ParseError{
 		Err:   err,
 		Range: token.Range,

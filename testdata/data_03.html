@@ -1,3 +1,4 @@
+
 {{ dddddd }}
 
 {{ define "tem" }}
@@ -14,6 +15,12 @@
 
 {{ define "titi" }}
 {{ end }}
+
+{{ $ = "23" }}
+
+{{ template "titi"  ""}}
+{{ template "titi"  12}}
+{{ template "titi"  $}}
 
 {{ $mokolo }}
 {{ dd }}
@@ -50,9 +57,34 @@ dfdfdf
 
 {{ $elmore := "elmore" }}
 {{ if $okay := true }} {{end }}}
+{{ str }}
+{{ str $elmore }}
+{{ and }}
 
-{{/*
-go:code
+
+{{/* go:code
+
+type Cringe struct {
+	name string
+}
 
 func dict()
+func str(string) int
+func dd(d)
+func stringer() string
+func doc() Cringe
+
 */}}
+
+{{ dict }}
+
+{{ define "taker" }}
+	{{ .name }}
+{{ end }}
+
+{{ $doc := stringer }}
+
+{{ template "taker" $doc }}
+
+
+

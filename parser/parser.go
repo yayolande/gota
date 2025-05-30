@@ -3,7 +3,7 @@ package parser
 import (
 	"bytes"
 	"errors"
-	"log"	// TODO: to remove
+	"log" // TODO: to remove
 
 	"github.com/yayolande/gota/lexer"
 )
@@ -37,10 +37,15 @@ func createParser(tokens []lexer.Token) *Parser {
 	input := make([]lexer.Token, len(tokens))
 	copy(input, tokens)
 
-	defaultGroupStatementNode := &GroupStatementNode{
-		Kind: KIND_GROUP_STATEMENT,
-		isRoot: true,
-	}
+	/*
+		defaultGroupStatementNode := &GroupStatementNode{
+			Kind: KIND_GROUP_STATEMENT,
+			isRoot: true,
+		}
+	*/
+
+	defaultGroupStatementNode := NewGroupStatementNode(KIND_GROUP_STATEMENT, lexer.Range{})
+	defaultGroupStatementNode.isRoot = true
 
 	groupNodeStack := []*GroupStatementNode{}
 	groupNodeStack = append(groupNodeStack, defaultGroupStatementNode)
@@ -55,17 +60,74 @@ func createParser(tokens []lexer.Token) *Parser {
 	return parser
 }
 
-func appendStatementToCurrentScope(scopeStack []*GroupStatementNode, statement AstNode) {
+func appendStatementToScopeShortcut(scope *GroupStatementNode, statement AstNode) *ParseError {
+	switch stmt := statement.(type) {
+	case *GroupStatementNode:
+
+		if !stmt.IsTemplate() {
+			// exit the current scope
+			return nil
+		}
+
+		//	WIP
+		// TODO: when initializing the scope, create 'ShortCut' fields
+		// (necessary since they are pointer, otherwise they are 'nil' when they reach this point)
+		templateNode := stmt.ControlFlow.(*TemplateStatementNode)
+		templateName := string(templateNode.TemplateName.Value)
+
+		scope.ShortCut.TemplateDefined[templateName] = stmt
+
+	case *TemplateStatementNode:
+
+		templateName := string(stmt.TemplateName.Value)
+		scope.ShortCut.TemplateCallUsed[templateName] = stmt
+
+	case *CommentNode:
+
+		if stmt.GoCode == nil {
+			// exit the current scope
+			return nil
+		}
+
+		if scope.ShortCut.CommentGoCode != nil {
+			// WIP
+			// ignore the new comment ;
+			// and return an error to user (no 2 'go:code' allowed in the same scope)
+			stmt.GoCode = nil
+
+			err := errors.New("cannot redeclare 'go:code' in the same scope")
+			return NewParseError(stmt.Value, err)
+		}
+
+		scope.ShortCut.CommentGoCode = stmt
+
+	case *VariableDeclarationNode:
+
+		if len(stmt.VariableNames) == 0 {
+			// exit the current scope
+			return nil
+		}
+
+		for _, variableToken := range stmt.VariableNames {
+			variableName := string(variableToken.Value)
+
+			scope.ShortCut.VariableDeclarations[variableName] = stmt
+		}
+	}
+
+	return nil
+}
+
+func appendStatementToCurrentScope(scope *GroupStatementNode, statement AstNode) {
 	if statement == nil {
 		panic("cannot add empty statement to 'group'")
 	}
 
-	if len(scopeStack) == 0 {
+	if scope == nil {
 		panic("cannot add statement to empty group. Group must be created before hand")
 	}
 
-	currentScope := getLastElement(scopeStack)
-	currentScope.Statements = append(currentScope.Statements, statement)
+	scope.Statements = append(scope.Statements, statement)
 }
 
 func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
@@ -73,7 +135,7 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 		return nil
 	}
 
-	// change var name to : "openedGroupNodeStack", "activeScopeNodes", "activeScopeStack", "openedScopeStack"
+	// TODO: change var name to : "openedGroupNodeStack", "activeScopeNodes", "activeScopeStack", "openedScopeStack"
 	if len(p.openedNodeStack) == 0 {
 		panic("no initial scope available to hold the statements. There must always exist at least one 'scope/group' at any moment")
 	}
@@ -85,99 +147,121 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 	var err *ParseError
 	var ROOT_SCOPE *GroupStatementNode = p.openedNodeStack[0]
 
-	newGroup, isScope := node.(*GroupStatementNode)
+	stackSize := len(p.openedNodeStack)
+	currentScope := p.openedNodeStack[stackSize-1]
+
+	newScope, isScope := node.(*GroupStatementNode)
 
 	if !isScope {
-		appendStatementToCurrentScope(p.openedNodeStack, node)
+
+		appendStatementToCurrentScope(currentScope, node)
+		err = appendStatementToScopeShortcut(currentScope, node)
+
 	} else {
-		if newGroup.isRoot == true {
-			log.Printf("non-root node cannot be flaged as 'root'.\n culprit node = %#v\n", newGroup)
+		if newScope.IsRoot() {
+			log.Printf("non-root node cannot be flaged as 'root'.\n culprit node = %#v\n", newScope)
 			panic("only the root node, can be marked as 'isRoot', but found it on non-root node")
 		}
 
-		stackSize := len(p.openedNodeStack)
-		lastInserted := getLastElement(p.openedNodeStack)
-		newGroup.parent = lastInserted
+		newScope.parent = currentScope
 
-		switch newGroup.GetKind() {
+		switch newScope.GetKind() {
 		case KIND_IF, KIND_WITH, KIND_RANGE_LOOP, KIND_BLOCK_TEMPLATE, KIND_DEFINE_TEMPLATE:
-			newGroup.parent = getLastElement(p.openedNodeStack)
-			appendStatementToCurrentScope(p.openedNodeStack, newGroup)
+			// newScope.parent = getLastElement(p.openedNodeStack)
+			// currentScope := p.openedNodeStack[stackSize - 1]
 
-			p.openedNodeStack = append(p.openedNodeStack, newGroup)
+			newScope.parent = currentScope
+			appendStatementToCurrentScope(currentScope, newScope)
+			err = appendStatementToScopeShortcut(currentScope, newScope)
+
+			p.openedNodeStack = append(p.openedNodeStack, newScope)
 
 		case KIND_ELSE_IF:
-			if stackSize > 1 {
-				switch lastInserted.GetKind() {
-				case KIND_IF, KIND_ELSE_IF:
-					// Remove the last element from the stack and switch it with 'KIND_ELSE_IF' scope
+			if stackSize >= 2 {
+				switch currentScope.GetKind() {
+				case KIND_IF, KIND_ELSE_IF: // Remove the last element from the stack and switch it with 'KIND_ELSE_IF' scope
+					parentScope := p.openedNodeStack[stackSize-2]
+
 					p.openedNodeStack = p.openedNodeStack[:stackSize-1]
 
-					newGroup.parent = getLastElement(p.openedNodeStack)
-					appendStatementToCurrentScope(p.openedNodeStack, newGroup)
+					// newScope.parent = getLastElement(p.openedNodeStack)
+					newScope.parent = parentScope
+					appendStatementToCurrentScope(parentScope, newScope)
 
-					p.openedNodeStack = append(p.openedNodeStack, newGroup)
+					p.openedNodeStack = append(p.openedNodeStack, newScope)
 				default:
-					err = &ParseError{Range: lastInserted.GetRange(),
-						Err: errors.New("'else if' statement is not compatible with '" + lastInserted.GetKind().String() + "'")}
+					err = &ParseError{Range: currentScope.GetRange(),
+						Err: errors.New("'else if' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newGroup.GetRange(),
-					Err: errors.New("extraneous statement '" + newGroup.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.GetRange(),
+					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
 			}
 		case KIND_ELSE_WITH:
-			if stackSize > 1 {
-				switch lastInserted.GetKind() {
+			if stackSize >= 2 {
+				switch currentScope.GetKind() {
 				case KIND_WITH, KIND_ELSE_WITH:
 					// Remove the last element from the stack and switch it with 'KIND_ELSE_WITH' scope
-					p.openedNodeStack = p.openedNodeStack[:stackSize-1]
+					parentScope := p.openedNodeStack[stackSize-2]
 
-					newGroup.parent = getLastElement(p.openedNodeStack)
-					appendStatementToCurrentScope(p.openedNodeStack, newGroup)
+					p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold current scope
 
-					p.openedNodeStack = append(p.openedNodeStack, newGroup)
+					// newScope.parent = getLastElement(p.openedNodeStack)
+					newScope.parent = parentScope
+					appendStatementToCurrentScope(parentScope, newScope)
+
+					p.openedNodeStack = append(p.openedNodeStack, newScope)
 				default:
-					err = &ParseError{Range: lastInserted.GetRange(),
-						Err: errors.New("'else with' statement is not compatible with '" + lastInserted.GetKind().String() + "'")}
+					err = &ParseError{Range: currentScope.GetRange(),
+						Err: errors.New("'else with' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newGroup.GetRange(),
-					Err: errors.New("extraneous statement '" + newGroup.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.GetRange(),
+					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
 			}
 		case KIND_ELSE:
-			if stackSize > 1 {
-				switch lastInserted.GetKind() {
+			if stackSize >= 2 {
+				switch currentScope.GetKind() {
 				case KIND_IF, KIND_ELSE_IF, KIND_WITH, KIND_ELSE_WITH, KIND_RANGE_LOOP:
 					// Remove the last element from the stack and switch it with 'KIND_ELSE' scope
-					p.openedNodeStack = p.openedNodeStack[:stackSize-1]
+					parentScope := p.openedNodeStack[stackSize-2]
 
-					newGroup.parent = getLastElement(p.openedNodeStack)
-					appendStatementToCurrentScope(p.openedNodeStack, newGroup)
+					p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold previous scope
 
-					p.openedNodeStack = append(p.openedNodeStack, newGroup)
+					// currentScope := p.openedNodeStack[stackSize - 1] // safe bc of previous 'if' condition
+					newScope.parent = parentScope
+					appendStatementToCurrentScope(parentScope, newScope)
+
+					p.openedNodeStack = append(p.openedNodeStack, newScope)
+
 				default:
-					err = &ParseError{Range: newGroup.GetRange(),
-						Err: errors.New("'else' statement is not compatible with '" + newGroup.GetKind().String() + "'")}
+					err = &ParseError{Range: newScope.GetRange(),
+						Err: errors.New("'else' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newGroup.GetRange(),
-					Err: errors.New("extraneous statement '" + newGroup.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.GetRange(),
+					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
 			}
 		case KIND_END:
-			if stackSize > 1 {
-				scopeToClose := getLastElement(p.openedNodeStack)
-				scopeToClose.Range.End = newGroup.Range.Start
+			if stackSize >= 2 {
+				// scopeToClose := getLastElement(p.openedNodeStack)
+				scopeToClose := currentScope
+				scopeToClose.Range.End = newScope.Range.Start
 
-				p.openedNodeStack = p.openedNodeStack[:stackSize-1]
+				parentScope := p.openedNodeStack[stackSize-2]
 
-				newGroup.parent = getLastElement(p.openedNodeStack)
-				appendStatementToCurrentScope(p.openedNodeStack, newGroup)
+				// newScope.parent = getLastElement(p.openedNodeStack)
+				newScope.parent = parentScope
+				appendStatementToCurrentScope(parentScope, newScope)
+
+				p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold/close current scope
+
 			} else {
-				err = &ParseError{Range: newGroup.GetRange(), Err: errors.New("extraneous 'end' statement detected")}
+				err = &ParseError{Range: newScope.GetRange(), Err: errors.New("extraneous 'end' statement detected")}
 			}
 		default:
-			log.Printf("unhandled scope type error\n scope = %#v\n", newGroup)
-			panic("scope type '" + newGroup.GetKind().String() + "' is not yet handled for statement grouping\n" + newGroup.String())
+			log.Printf("unhandled scope type error\n scope = %#v\n", newScope)
+			panic("scope type '" + newScope.GetKind().String() + "' is not yet handled for statement grouping\n" + newScope.String())
 		}
 	}
 
@@ -226,9 +310,10 @@ func Parse(tokens []lexer.Token) (*GroupStatementNode, []lexer.Error) {
 
 	defaultGroupStatementNode := parser.openedNodeStack[0]
 
-	if len(parser.openedNodeStack) > 1 {
-		lastInserted := getLastElement(parser.openedNodeStack)
-		err := ParseError{Range: lastInserted.GetRange(),
+	if size := len(parser.openedNodeStack); size > 1 {
+		// currentScope := getLastElement(parser.openedNodeStack)
+		currentScope := parser.openedNodeStack[size-1]
+		err := ParseError{Range: currentScope.GetRange(),
 			Err: errors.New("not all group statements ('if/else/define/block/with') have been properly claused")}
 
 		errs = append(errs, err)
@@ -323,9 +408,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 		// INFO: most composite statements (else if xxx, etc) do not check for 'EOL' on purpose
 
 		if bytes.Compare(keywordToken.Value, []byte("if")) == 0 {
-			ifExpression := &GroupStatementNode{}
-			ifExpression.Kind = KIND_IF
-			ifExpression.Range = keywordToken.Range
+			/*
+				ifExpression := &GroupStatementNode{}
+				ifExpression.Kind = KIND_IF
+				ifExpression.Range = keywordToken.Range
+			*/
+
+			ifExpression := NewGroupStatementNode(KIND_IF, keywordToken.Range)
 			ifExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip keyword "if"
@@ -357,9 +446,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return ifExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("else")) == 0 {
-			elseExpression := &GroupStatementNode{}
-			elseExpression.Kind = KIND_ELSE
-			elseExpression.Range = keywordToken.Range
+			/*
+				elseExpression := &GroupStatementNode{}
+				elseExpression.Kind = KIND_ELSE
+				elseExpression.Range = keywordToken.Range
+			*/
+
+			elseExpression := NewGroupStatementNode(KIND_ELSE, keywordToken.Range)
 			elseExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'else' token
@@ -398,9 +491,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return elseCompositeExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("end")) == 0 {
-			endExpression := &GroupStatementNode{}
-			endExpression.Kind = KIND_END
-			endExpression.Range = keywordToken.Range
+			/*
+				endExpression := &GroupStatementNode{}
+				endExpression.Kind = KIND_END
+				endExpression.Range = keywordToken.Range
+			*/
+
+			endExpression := NewGroupStatementNode(KIND_END, keywordToken.Range)
 			endExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'end' token
@@ -414,9 +511,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return endExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("range")) == 0 {
-			rangeExpression := &GroupStatementNode{}
-			rangeExpression.Kind = KIND_RANGE_LOOP
-			rangeExpression.Range = keywordToken.Range
+			/*
+				rangeExpression := &GroupStatementNode{}
+				rangeExpression.Kind = KIND_RANGE_LOOP
+				rangeExpression.Range = keywordToken.Range
+			*/
+
+			rangeExpression := NewGroupStatementNode(KIND_RANGE_LOOP, keywordToken.Range)
 			rangeExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken()
@@ -462,9 +563,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return rangeExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("with")) == 0 {
-			withExpression := &GroupStatementNode{}
-			withExpression.Kind = KIND_WITH
-			withExpression.Range = keywordToken.Range
+			/*
+				withExpression := &GroupStatementNode{}
+				withExpression.Kind = KIND_WITH
+				withExpression.Range = keywordToken.Range
+			*/
+
+			withExpression := NewGroupStatementNode(KIND_WITH, keywordToken.Range)
 			withExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'with' token
@@ -496,9 +601,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return withExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("block")) == 0 {
-			blockExpression := &GroupStatementNode{}
-			blockExpression.Kind = KIND_BLOCK_TEMPLATE
-			blockExpression.Range = keywordToken.Range
+			/*
+				blockExpression := &GroupStatementNode{}
+				blockExpression.Kind = KIND_BLOCK_TEMPLATE
+				blockExpression.Range = keywordToken.Range
+			*/
+
+			blockExpression := NewGroupStatementNode(KIND_BLOCK_TEMPLATE, keywordToken.Range)
 			blockExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'block' token
@@ -541,9 +650,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return blockExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("define")) == 0 {
-			defineExpression := &GroupStatementNode{}
-			defineExpression.Kind = KIND_DEFINE_TEMPLATE
-			defineExpression.Range = keywordToken.Range
+			/*
+				defineExpression := &GroupStatementNode{}
+				defineExpression.Kind = KIND_DEFINE_TEMPLATE
+				defineExpression.Range = keywordToken.Range
+			*/
+
+			defineExpression := NewGroupStatementNode(KIND_DEFINE_TEMPLATE, keywordToken.Range)
 			defineExpression.Range.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'define' token
@@ -763,30 +876,30 @@ func (p *Parser) multiExpressionParser() (*MultiExpressionNode, *ParseError) {
 	var err *ParseError
 
 	/*
-	expression, err := p.expressionParser()
-	multiExpression.Expressions = append(multiExpression.Expressions, expression)
+		expression, err := p.expressionParser()
+		multiExpression.Expressions = append(multiExpression.Expressions, expression)
 
-	if err != nil {
-		err.Range = lastTokenInInstruction.Range
-		err.Range.Start = lastTokenInInstruction.Range.End
-		err.Range.Start.Character--
-		return multiExpression, err
-	}
+		if err != nil {
+			err.Range = lastTokenInInstruction.Range
+			err.Range.Start = lastTokenInInstruction.Range.End
+			err.Range.Start.Character--
+			return multiExpression, err
+		}
 
-	if expression == nil { // because if err == nil, then expression != nil
-		panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + multiExpression.String())
-	}
+		if expression == nil { // because if err == nil, then expression != nil
+			panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + multiExpression.String())
+		}
 	*/
 
-	for next := true ; next ; next = p.expect(lexer.PIPE) {
+	for next := true; next; next = p.expect(lexer.PIPE) {
 		expression, err = p.expressionParser()
 		multiExpression.Expressions = append(multiExpression.Expressions, expression)
 
 		if err != nil {
 			/*
-			err.Range = lastTokenInInstruction.Range
-			err.Range.Start = lastTokenInInstruction.Range.End
-			err.Range.Start.Character--
+				err.Range = lastTokenInInstruction.Range
+				err.Range.Start = lastTokenInInstruction.Range.End
+				err.Range.Start.Character--
 			*/
 			return multiExpression, err
 		}
@@ -822,7 +935,7 @@ func (p *Parser) expressionParser() (*ExpressionNode, *ParseError) {
 	}
 
 	if depth < 0 {
-		currentSymbol = getLastElement(expression.Symbols)		// since depth != 0 then len(expression.Symboles) > 0
+		currentSymbol = getLastElement(expression.Symbols) // since depth != 0 then len(expression.Symboles) > 0
 		err = NewParseError(currentSymbol, errors.New("no matching opening bracket '('"))
 		return expression, err
 	} else if depth > 0 {
@@ -830,21 +943,21 @@ func (p *Parser) expressionParser() (*ExpressionNode, *ParseError) {
 		return expression, err
 	}
 
-
+	// TODO: Remove this comment below whenever useless
 	/*
-	for p.accept(lexer.FUNCTION) || p.accept(lexer.DOT_VARIABLE) || p.accept(lexer.DOLLAR_VARIABLE) || p.accept(lexer.STRING) || p.accept(lexer.NUMBER) || 
-		p.accept(lexer.LEFT_PAREN) || p.accept(lexer.RIGTH_PAREN) {
-		if p.peek().ID == lexer.LEFT_PAREN {
-			return p.symbolParser(depth + 1)
-		} else if p.peek().ID == lexer.RIGTH_PAREN {
-			return depth - 1
+		for p.accept(lexer.FUNCTION) || p.accept(lexer.DOT_VARIABLE) || p.accept(lexer.DOLLAR_VARIABLE) || p.accept(lexer.STRING) || p.accept(lexer.NUMBER) ||
+			p.accept(lexer.LEFT_PAREN) || p.accept(lexer.RIGTH_PAREN) {
+			if p.peek().ID == lexer.LEFT_PAREN {
+				return p.symbolParser(depth + 1)
+			} else if p.peek().ID == lexer.RIGTH_PAREN {
+				return depth - 1
+			}
+
+			currentSymbol = p.peek()
+			expression.Symbols = append(expression.Symbols, currentSymbol)
+
+			p.nextToken()
 		}
-
-		currentSymbol = p.peek()
-		expression.Symbols = append(expression.Symbols, currentSymbol)
-
-		p.nextToken()
-	}
 	*/
 
 	if p.isEOF() {
@@ -869,7 +982,7 @@ func (p *Parser) symbolParser(expression *ExpressionNode, depth int) (int, *Pars
 	var currentSymbol *lexer.Token
 	var err *ParseError
 
-	for p.accept(lexer.FUNCTION) || p.accept(lexer.DOT_VARIABLE) || p.accept(lexer.DOLLAR_VARIABLE) || p.accept(lexer.STRING) || p.accept(lexer.NUMBER) || 
+	for p.accept(lexer.FUNCTION) || p.accept(lexer.DOT_VARIABLE) || p.accept(lexer.DOLLAR_VARIABLE) || p.accept(lexer.STRING) || p.accept(lexer.NUMBER) ||
 		p.accept(lexer.LEFT_PAREN) || p.accept(lexer.RIGTH_PAREN) {
 
 		currentSymbol = p.peek()
@@ -879,9 +992,9 @@ func (p *Parser) symbolParser(expression *ExpressionNode, depth int) (int, *Pars
 
 		if currentSymbol.ID == lexer.LEFT_PAREN {
 			var newDepth int
-			newDepth, err = p.symbolParser(expression, depth + 1)
+			newDepth, err = p.symbolParser(expression, depth+1)
 
-			if newDepth != depth {	// In this case this is always true, newDepth >= depth
+			if newDepth != depth { // In this case this is always true, newDepth >= depth
 				// unclosed left paren
 				err = NewParseError(currentSymbol, errors.New("parenthesis not closed"))
 			}
@@ -901,10 +1014,11 @@ func (p *Parser) symbolParser(expression *ExpressionNode, depth int) (int, *Pars
 
 func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 	comment := commentExpression.Value.Value
+	// comment = bytes.TrimPrefix(comment, []byte(" \n\r\t"))
 	comment = bytes.TrimSpace(comment)
 
 	const SEP_COMMENT_GOCODE = "go:code"
-	if ! bytes.HasPrefix(comment, []byte(SEP_COMMENT_GOCODE)) {
+	if !bytes.HasPrefix(comment, []byte(SEP_COMMENT_GOCODE)) {
 		log.Printf("SEP not found :: sep = %s :: comment = %q\n", SEP_COMMENT_GOCODE, comment)
 		return
 	}
@@ -918,14 +1032,34 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 	}
 
 	first := comment[0]
-	if ! (first == ' ' || first == '\n' || first == '\t' || first == '\r') {
+	if !(first == ' ' || first == '\n' || first == '\t' || first == '\r') {
+		// TODO: report this error to user instead of only printing it in the log
 		log.Printf("after SEP, no separation 'space' = %q\n", comment)
 		return
 	}
 
-	comment = bytes.TrimLeft(comment, SEP_COMMENT_GOCODE)
-	commentExpression.GoCode = comment
+	// comment = bytes.TrimLeft(comment, SEP_COMMENT_GOCODE)
+
+	initialLength := len(commentExpression.Value.Value)
+	finalLength := len(comment)
+	diff := initialLength - finalLength
+
+	pos := lexer.ConvertSingleIndexToTextEditorPosition(commentExpression.Value.Value, diff)
+
+	reach := commentExpression.Range
+	reach.Start.Line += pos.Line
+	reach.Start.Character = pos.Character
+
+	commentExpression.GoCode = &lexer.Token{
+		ID:    lexer.COMMENT,
+		Range: reach,
+		Value: comment,
+	}
+	// commentExpression.GoCode = comment
 	log.Printf("\nHourray, go:code found : %q\n\n", comment)
+
+	log.Printf("go:code stuff:\n range comment = %s\n range gocode = %s \n",
+		commentExpression.Range, commentExpression.GoCode.Range)
 }
 
 func (p Parser) peek() *lexer.Token {

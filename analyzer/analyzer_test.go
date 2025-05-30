@@ -17,139 +17,139 @@ import (
 
 func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 	data := []struct {
-		Varname					string
-		ExpectedType			types.Type
-		ExpectedTypeString	string
-		IsExpectingError		bool
-	} {
+		Varname            string
+		ExpectedType       types.Type
+		ExpectedTypeString string
+		IsExpectingError   bool
+	}{
 		{
-			Varname: "atomicInt",
+			Varname:      "atomicInt",
 			ExpectedType: types.Typ[types.Int],
 		},
 		{
-			Varname: "atomicString",
+			Varname:      "atomicString",
 			ExpectedType: types.Typ[types.String],
 		},
 		{
-			Varname: "atomicBool",
+			Varname:      "atomicBool",
 			ExpectedType: types.Typ[types.Bool],
 		},
 		{
-			Varname: "varFunction",
-			ExpectedType: nil,
+			Varname:            "varFunction",
+			ExpectedType:       nil,
 			ExpectedTypeString: "func (int, bool) string",
 		},
 		{
-			Varname: "varAnyFunction",
+			Varname:      "varAnyFunction",
 			ExpectedType: types.Universe.Lookup("any").Type(),
 		},
 		{
-			Varname: "varStructSimple.Kind",
+			Varname:      "varStructSimple.Kind",
 			ExpectedType: types.Typ[types.Int],
 		},
 		{
-			Varname: "varStructSimple.Data",
+			Varname:      "varStructSimple.Data",
 			ExpectedType: types.Universe.Lookup("any").Type(),
 		},
 		{
-			Varname: "varStructWithMethods.Age",
+			Varname:      "varStructWithMethods.Age",
 			ExpectedType: types.Typ[types.Int],
 		},
 		{
-			Varname: "varStructWithMethods.Name",
-			ExpectedType: nil,
-			ExpectedTypeString: "func () string",	// signature type
+			Varname:            "varStructWithMethods.Name",
+			ExpectedType:       nil,
+			ExpectedTypeString: "func () string", // signature type
 		},
 		{
-			Varname: "varStructWithMethods.GetAge",
-			ExpectedType: nil,
+			Varname:            "varStructWithMethods.GetAge",
+			ExpectedType:       nil,
 			ExpectedTypeString: "func () int",
 		},
 		{
-			Varname: "varStructWithMethods.SetAge",
-			ExpectedType: nil,
-			ExpectedTypeString: "func (int)",	// signature type
+			Varname:            "varStructWithMethods.SetAge",
+			ExpectedType:       nil,
+			ExpectedTypeString: "func (int)", // signature type
 		},
 		{
-			Varname: "varStructWithMethods.name",
+			Varname:      "varStructWithMethods.name",
 			ExpectedType: types.Typ[types.String],
 		},
 		{
-			Varname: "varStructWithMethods.GetAst.Data",
+			Varname:      "varStructWithMethods.GetAst.Data",
 			ExpectedType: nil,
 			// ExpectedTypeString: "struct { Kind int; Data any; }",
-			IsExpectingError: true,		// bc method call can only be at the end of varname
+			IsExpectingError: true, // bc method call can only be at the end of varname
 		},
 		/*
-		{
-			Varname: "varStructWithMethods.GetAst",
-			ExpectedType: nil,
-			ExpectedTypeString: "func () struct { Kind int; Data any; }",
-		},
+			{
+				Varname: "varStructWithMethods.GetAst",
+				ExpectedType: nil,
+				ExpectedTypeString: "func () struct { Kind int; Data any; }",
+			},
 		*/
 		{
-			Varname: "varSliceSimple",
-			ExpectedType: nil,
+			Varname:            "varSliceSimple",
+			ExpectedType:       nil,
 			ExpectedTypeString: "[]int",
 		},
 		{
-			Varname: "varMapSimple",
-			ExpectedType: nil,
+			Varname:            "varMapSimple",
+			ExpectedType:       nil,
 			ExpectedTypeString: "map[string]*int",
 		},
 		{
-			Varname: "varMapStruct.table",
-			ExpectedType: nil,
+			Varname:            "varMapStruct.table",
+			ExpectedType:       nil,
 			ExpectedTypeString: "map[string]*int",
 		},
 		{
-			Varname: "varMapStruct.table.ast",
-			ExpectedType: nil,
+			Varname:          "varMapStruct.table.ast",
+			ExpectedType:     nil,
 			IsExpectingError: true,
 		},
 		{
-			Varname: "varPointerSimple",
+			Varname:            "varPointerSimple",
 			ExpectedTypeString: "*int",
 		},
 		{
-			Varname: "varInterfaceError",
+			Varname:      "varInterfaceError",
 			ExpectedType: types.Universe.Lookup("error").Type(),
 		},
 		{
-			Varname: "varInterfaceError.Error",
+			Varname:            "varInterfaceError.Error",
 			ExpectedTypeString: "func () string",
 		},
 		{
-			Varname: "varInterfaceEmbeded.Error",
+			Varname:            "varInterfaceEmbeded.Error",
 			ExpectedTypeString: "func () string",
 		},
 		{
 			Varname: "varInterfaceEmbeded.Err.Error",
 			// ExpectedTypeString: "func () string",
-			IsExpectingError: true,	// method call can only be at the end of varname
+			IsExpectingError: true, // method call can only be at the end of varname
 		},
 		{
-			Varname: "varChannelSimple",
+			Varname:            "varChannelSimple",
 			ExpectedTypeString: "chan int",
 		},
 		{
-			Varname: "varAdvancedData.Counter",
+			Varname:            "varAdvancedData.Counter",
 			ExpectedTypeString: "*int",
 		},
 		{
-			Varname: "varAdvancedData.Channel",
+			Varname:            "varAdvancedData.Channel",
 			ExpectedTypeString: "chan string",
 		},
 		{
-			Varname: "varAdvancedData.EmbederFace.Err",
+			Varname:            "varAdvancedData.EmbederFace.Err",
 			ExpectedTypeString: "func () error",
 		},
 		{
-			Varname: "varAdvancedData.person.Age",
+			Varname:            "varAdvancedData.person.Age",
 			ExpectedTypeString: "int",
 		},
 		{
-			Varname: "varAdvancedData.person.message",
+			Varname:            "varAdvancedData.person.message",
 			ExpectedTypeString: "chan string",
 		},
 		{
@@ -162,12 +162,12 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 	fileLocation := filepath.Join("..", "testdata", "source_code.go")
 
 	config := &packages.Config{
-		Mode: 
+		Mode:
 		// packages.NeedSyntax |
-			packages.NeedDeps |
-		// packages.NeedImports |
-		// packages.LoadImports |
-		// packages.LoadAllSyntax |
+		packages.NeedDeps |
+			// packages.NeedImports |
+			// packages.LoadImports |
+			// packages.LoadAllSyntax |
 			packages.NeedTypes,
 	}
 
@@ -201,7 +201,7 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 
 			obj := pkg.Types.Scope().Lookup(rootName)
 			if obj == nil {
-				t.Fatalf("type/symbol is undefined in the source file\n" + 
+				t.Fatalf("type/symbol is undefined in the source file\n"+
 					"=> varname = %s\n=> rootName = %s",
 					datium.Varname, rootName)
 			}
@@ -214,14 +214,14 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 			// 1. here come the function to test
 			typ, err := getTypeOfDollarVariableWithinFile(variable, varDef)
 
-			if err != nil && ! datium.IsExpectingError || 
+			if err != nil && !datium.IsExpectingError ||
 				err == nil && datium.IsExpectingError {
 
-				t.Fatalf("mismatch between error expectation and reality\n" + 
+				t.Fatalf("mismatch between error expectation and reality\n"+
 					"-> err = %s\n-> isErrorExpected = %t",
 					err, datium.IsExpectingError,
 				)
-			} 
+			}
 
 			if err != nil && datium.IsExpectingError {
 				return
@@ -230,8 +230,8 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 			// start: skip type check for type difficult to create manually
 			if datium.ExpectedType == nil {
 				if datium.ExpectedTypeString == "" {
-					t.Skipf("type check for 'expected' and 'computed' type is skipped !\n" +
-						"Only skip type checking for type that are complex to create\n" + 
+					t.Skipf("type check for 'expected' and 'computed' type is skipped !\n"+
+						"Only skip type checking for type that are complex to create\n"+
 						"skipped type check for test = '%s'\n",
 						testName,
 					)
@@ -264,13 +264,13 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 			}
 			// end
 
-			if ! types.Identical(typ, datium.ExpectedType) {
-				t.Fatalf("type mismatch between expectation and reality\n" + 
+			if !types.Identical(typ, datium.ExpectedType) {
+				t.Fatalf("type mismatch between expectation and reality\n"+
 					"-> got type = %#v\n-> expected type = %#v",
 					typ, datium.ExpectedType,
 				)
 			}
-			
+
 		})
 	}
 
@@ -279,65 +279,65 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 // TODO: later on, add Range to the test suite
 func TestSplitVariableNameFields(t *testing.T) {
 	data := []struct {
-		Name				string
-		Offset			[2]int
-		ExpectedOffset	[2]int
-		ExpectedNames	[]string
-		ExpectedError	bool
-	} {
+		Name           string
+		Offset         [2]int
+		ExpectedOffset [2]int
+		ExpectedNames  []string
+		ExpectedError  bool
+	}{
 		{
-			Name: "name",
+			Name:          "name",
 			ExpectedNames: []string{"name"},
 		},
 		{
-			Name: "wonder.land",
+			Name:          "wonder.land",
 			ExpectedNames: []string{"wonder", "land"},
 		},
 		{
-			Name: "car.wheel..fault",
+			Name:          "car.wheel..fault",
 			ExpectedNames: []string{"car", "wheel"},
 			ExpectedError: true,
 		},
 		{
-			Name: "car.wheel.fault.",
+			Name:          "car.wheel.fault.",
 			ExpectedNames: []string{"car", "wheel", "fault"},
 			ExpectedError: true,
 		},
 		{
-			Name: ".person.address.city",
+			Name:          ".person.address.city",
 			ExpectedNames: []string{".", "person", "address", "city"},
 		},
 		{
-			Name: "..department.class.student",
+			Name:          "..department.class.student",
 			ExpectedNames: []string{"."},
 			ExpectedError: true,
 		},
 		{
-			Name: ".name",
+			Name:          ".name",
 			ExpectedNames: []string{".", "name"},
 		},
 		{
-			Name: "..name..",
+			Name:          "..name..",
 			ExpectedNames: []string{"."},
 			ExpectedError: true,
 		},
 		{
-			Name: "$.name..",
+			Name:          "$.name..",
 			ExpectedNames: []string{"$", "name"},
 			ExpectedError: true,
 		},
 		{
-			Name: "$family.guy.",
+			Name:          "$family.guy.",
 			ExpectedNames: []string{"$family", "guy"},
 			ExpectedError: true,
 		},
 		{
-			Name: ".",
+			Name:          ".",
 			ExpectedNames: []string{"."},
 			ExpectedError: false,
 		},
 		{
-			Name: "$.",
+			Name:          "$.",
 			ExpectedNames: []string{"$"},
 			ExpectedError: true,
 		},
@@ -349,16 +349,16 @@ func TestSplitVariableNameFields(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			reach := lexer.Range{
 				Start: lexer.Position{
-					Line: 0,
+					Line:      0,
 					Character: datium.Offset[0],
 				},
 				End: lexer.Position{
-					Line: 0,
+					Line:      0,
 					Character: datium.Offset[1],
 				},
 			}
 
-			variable := &lexer.Token {
+			variable := &lexer.Token{
 				Value: []byte(datium.Name),
 				Range: reach,
 			}
@@ -366,22 +366,22 @@ func TestSplitVariableNameFields(t *testing.T) {
 			fields, fieldsLocalPosition, err := splitVariableNameFields(variable)
 			if datium.ExpectedError {
 				if err == nil {
-					t.Fatalf("varialbe name spliting was expecting an error but got nil." + 
-						"\n varname = %s\n expect = %q\n got = %q", 
+					t.Fatalf("varialbe name spliting was expecting an error but got nil."+
+						"\n varname = %s\n expect = %q\n got = %q",
 						datium.Name, datium.ExpectedNames, fields)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("varialbe name spliting didn't expect an error ::: %s." + 
-						"\n varname = %s\n expect = %q\n got = %q\n err = %s", 
+					t.Fatalf("varialbe name spliting didn't expect an error ::: %s."+
+						"\n varname = %s\n expect = %q\n got = %q\n err = %s",
 						err.Err.Error(), datium.Name, datium.ExpectedNames, fields, err.Err.Error())
 				}
 			}
 
 			if err != nil {
-				if ! datium.ExpectedError {
-					t.Fatalf("varialbe name spliting error detected ::: %s." + 
-						"\n varname = %s\n expect = %q\n got = %q", 
+				if !datium.ExpectedError {
+					t.Fatalf("varialbe name spliting error detected ::: %s."+
+						"\n varname = %s\n expect = %q\n got = %q",
 						err.Err.Error(), datium.Name, datium.ExpectedNames, fields)
 				}
 			}
@@ -405,32 +405,32 @@ func TestSplitVariableNameFields(t *testing.T) {
 
 func TestMakeTypeInference(t *testing.T) {
 	type Field struct {
-		Varname		string
-		TypeString	string
+		Varname    string
+		TypeString string
 	}
 
 	data := []struct {
-		Expression		[]Field		// expr implies template expression ==> expr1 expr2 expr3 ...
-		Expect			[2]string
-		ExpectedError	error
-	} {
+		Expression    []Field // expr implies template expression ==> expr1 expr2 expr3 ...
+		Expect        [2]string
+		ExpectedError error
+	}{
 		{
-			Expression: []Field{	// expr ==> "num"
+			Expression: []Field{ // expr ==> "num"
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 			},
-			Expect: [2]string { "int", "nil" },
+			Expect: [2]string{"int", "nil"},
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 			},
@@ -440,17 +440,17 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "func () string",
 				},
 			},
-			Expect: [2]string { "string", "nil" },
+			Expect: [2]string{"string", "nil"},
 			// ExpectedError: errArgumentsOnlyForFunction,
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "func ()",
 				},
 			},
@@ -460,7 +460,7 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "coktail",
+					Varname:    "coktail",
 					TypeString: "func () (int, int, int)",
 				},
 			},
@@ -470,7 +470,7 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "coktail",
+					Varname:    "coktail",
 					TypeString: "func () (int, int)",
 				},
 			},
@@ -480,17 +480,17 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "coktail",
+					Varname:    "coktail",
 					TypeString: "func () (int, error)",
 				},
 			},
-			Expect: [2]string { "int", "error" },
+			Expect: [2]string{"int", "error"},
 			// ExpectedError: errFunctionSecondReturnNotError,
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "coktail",
+					Varname:    "coktail",
 					TypeString: "func () (int, error, error)",
 				},
 			},
@@ -498,35 +498,35 @@ func TestMakeTypeInference(t *testing.T) {
 			ExpectedError: errFunctionMaxReturn,
 		},
 		{
-			Expression: []Field{	// expr => dat str num
+			Expression: []Field{ // expr => dat str num
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, int) string",
 				},
 				{
-					Varname: "str",
+					Varname:    "str",
 					TypeString: "string",
 				},
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 			},
-			Expect: [2]string { "string", "nil" },
+			Expect: [2]string{"string", "nil"},
 			// ExpectedError: errArgumentsOnlyForFunction,
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, int)",
 				},
 				{
-					Varname: "str",
+					Varname:    "str",
 					TypeString: "string",
 				},
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 			},
@@ -536,15 +536,15 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, ...int) *int",
 				},
 				{
-					Varname: "str",
+					Varname:    "str",
 					TypeString: "string",
 				},
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "int",
 				},
 			},
@@ -554,71 +554,85 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, ...int) *int",
 				},
 				{
-					Varname: "str",
+					Varname:    "str",
 					TypeString: "string",
 				},
 				{
-					Varname: "num",
+					Varname:    "num",
 					TypeString: "[]int",
 				},
 			},
-			Expect: [2]string { "*int", "nil" },
+			Expect: [2]string{"*int", "nil"},
+			// ExpectedError: errFunctionVoidReturn,
+		},
+		{ // TODO: NOT TESTED YET !!!!
+			Expression: []Field{
+				{
+					Varname:    "dat",
+					TypeString: "func (string, ...int) *int",
+				},
+				{
+					Varname:    "str",
+					TypeString: "string",
+				},
+			},
+			Expect: [2]string{"*int", "nil"},
 			// ExpectedError: errFunctionVoidReturn,
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, int, int, error) (int, error)",
 				},
 				{
-					Varname: "makeStr",
+					Varname:    "makeStr",
 					TypeString: "func () string",
 				},
 				{
-					Varname: "genNumber",
+					Varname:    "genNumber",
 					TypeString: "func () int",
 				},
 				{
-					Varname: "counter",
+					Varname:    "counter",
 					TypeString: "int",
 				},
 				{
-					Varname: "errMsg",
+					Varname:    "errMsg",
 					TypeString: "error",
 				},
 			},
-			Expect: [2]string { "int", "error" },
+			Expect: [2]string{"int", "error"},
 			// ExpectedError: errFunctionVoidReturn,
 		},
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, int, int, error) (int, error)",
 				},
 				{
-					Varname: "makeStr",
+					Varname:    "makeStr",
 					TypeString: "func () string",
 				},
 				{
-					Varname: "makeNumberFromSeed",
+					Varname:    "makeNumberFromSeed",
 					TypeString: "func (int) int",
 				},
 				{
-					Varname: "seed",
+					Varname:    "seed",
 					TypeString: "int",
 				},
 				{
-					Varname: "counter",
+					Varname:    "counter",
 					TypeString: "int",
 				},
 				{
-					Varname: "errMsg",
+					Varname:    "errMsg",
 					TypeString: "error",
 				},
 			},
@@ -628,28 +642,28 @@ func TestMakeTypeInference(t *testing.T) {
 		{
 			Expression: []Field{
 				{
-					Varname: "dat",
+					Varname:    "dat",
 					TypeString: "func (string, map[int]string) (int, error)",
 				},
 				{
-					Varname: "makeStr",
+					Varname:    "makeStr",
 					TypeString: "func () string",
 				},
 				{
-					Varname: "seeder",
+					Varname:    "seeder",
 					TypeString: "map[int]string",
 				},
 			},
-			Expect: [2]string { "int", "error" },
+			Expect: [2]string{"int", "error"},
 			// ExpectedError: errFunctionParameterSizeMismatch,
 		},
 	}
 
-	computeExpressionType := func (exprString string, t *testing.T) (types.Type) {
+	computeExpressionType := func(exprString string, t *testing.T) types.Type {
 		info := &types.Info{
 			Types: make(map[ast.Expr]types.TypeAndValue),
-			Defs: make(map[*ast.Ident]types.Object),
-			Uses: make(map[*ast.Ident]types.Object),
+			Defs:  make(map[*ast.Ident]types.Object),
+			Uses:  make(map[*ast.Ident]types.Object),
 		}
 
 		expr, err := parser.ParseExpr(exprString)
@@ -680,9 +694,9 @@ func TestMakeTypeInference(t *testing.T) {
 
 			for _, field := range datium.Expression {
 				/*
-				if field.TypeString == "" {
-					fmt.Println("empty 'typeString' for field = ", field)
-				}
+					if field.TypeString == "" {
+						fmt.Println("empty 'typeString' for field = ", field)
+					}
 				*/
 
 				typ := computeExpressionType(field.TypeString, t)
@@ -695,16 +709,18 @@ func TestMakeTypeInference(t *testing.T) {
 				typs = append(typs, typ)
 			}
 
-			inferedTypes, err := makeTypeInference(symbols, typs)
+			// TODO: 'makeTypeInference()' have changed lately.
+			// Make new test to take into consideration the new features
+			inferedTypes, _, err := makeTypeInference(symbols, typs)
 			if err != nil {
-				if ! errors.Is(err.Err, datium.ExpectedError) {
+				if !errors.Is(err.Err, datium.ExpectedError) {
 					t.Fatalf("error while making expression type inference ::: %s", err.Err.Error())
 				}
 
 				return
-			} else if datium.ExpectedError != nil {	// this mean that err == nil, but we expected otherwise
-				t.Fatalf("expected an error but got noting\n" +
-					" expected = %s\n got = %s", 
+			} else if datium.ExpectedError != nil { // this mean that err == nil, but we expected otherwise
+				t.Fatalf("expected an error but got noting\n"+
+					" expected = %s\n got = %s",
 					datium.ExpectedError.Error(), err,
 				)
 			}
@@ -712,12 +728,10 @@ func TestMakeTypeInference(t *testing.T) {
 			expectFirst := computeExpressionType(datium.Expect[0], t)
 			expectSecond := computeExpressionType(datium.Expect[1], t)
 
-			if ! (types.Identical(inferedTypes[0], expectFirst) && 
+			if !(types.Identical(inferedTypes[0], expectFirst) &&
 				types.Identical(inferedTypes[1], expectSecond)) {
-				t.Fatalf("type mismatch\n expected = %q\n got = %q", datium.Expect , inferedTypes)
+				t.Fatalf("type mismatch\n expected = %q\n got = %q", datium.Expect, inferedTypes)
 			}
 		})
 	}
 }
-
-

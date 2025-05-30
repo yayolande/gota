@@ -12,13 +12,13 @@ import (
 // ----------------------
 
 type Position struct {
-	Line			int
-	Character	int
+	Line      int
+	Character int
 }
 
 type Range struct {
-	Start	Position
-	End	Position
+	Start Position
+	End   Position
 }
 
 func (r Range) Contains(p Position) bool {
@@ -44,9 +44,23 @@ func (r Range) Contains(p Position) bool {
 type Kind int
 
 type Token struct {
-	ID		Kind
-	Range	Range
-	Value	[]byte
+	ID    Kind
+	Range Range
+	Value []byte
+}
+
+func CloneToken(old *Token) *Token {
+	if old == nil {
+		return nil
+	}
+
+	fresh := &Token{
+		ID:    old.ID,
+		Range: old.Range,
+		Value: bytes.Clone(old.Value),
+	}
+
+	return fresh
 }
 
 type LexerError struct {
@@ -64,9 +78,9 @@ func (l LexerError) GetRange() Range {
 }
 
 type Error interface {
-	GetError()	string
-	GetRange()	Range
-	String()		string
+	GetError() string
+	GetRange() Range
+	String() string
 }
 
 // Tokenize the source code provided by 'content'.
@@ -209,7 +223,7 @@ func extractTemplateCode(content []byte) ([][]byte, []Range) {
 	return templateCode, templatePositions
 }
 
-func convertSingleIndexToTextEditorPosition(buffer []byte, charIndex int) Position {
+func ConvertSingleIndexToTextEditorPosition(buffer []byte, charIndex int) Position {
 	var index, characterCount int
 	var line int
 
@@ -231,8 +245,8 @@ func convertSingleIndexToTextEditorPosition(buffer []byte, charIndex int) Positi
 
 func convertRangeIndexToTextEditorPosition(editorContent []byte, rangeIndex []int, initialLine, initialColumn int) Range {
 	position := Range{}
-	position.Start = convertSingleIndexToTextEditorPosition(editorContent, rangeIndex[0])
-	position.End = convertSingleIndexToTextEditorPosition(editorContent, rangeIndex[1]-1)
+	position.Start = ConvertSingleIndexToTextEditorPosition(editorContent, rangeIndex[0])
+	position.End = ConvertSingleIndexToTextEditorPosition(editorContent, rangeIndex[1]-1)
 
 	if position.Start.Line == 0 {
 		position.Start.Character += initialColumn
@@ -291,7 +305,7 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 		if loc != nil && loc[0] == 0 {
 			content := data[loc[0]:loc[1]]
 
-			position := convertSingleIndexToTextEditorPosition(content, loc[1])
+			position := ConvertSingleIndexToTextEditorPosition(content, loc[1])
 			if position.Line != 0 {
 				currentLocalColumnNumber = 0
 			}

@@ -4,7 +4,9 @@ package gota
 
 import (
 	"bytes"
+	// errors"
 	"fmt"
+	// go/types"
 	"io"
 	"log"
 	"maps"
@@ -12,14 +14,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	checker "github.com/yayolande/gota/analyzer"
 	"github.com/yayolande/gota/lexer"
 	"github.com/yayolande/gota/parser"
-	checker "github.com/yayolande/gota/analyzer"
 )
 
 // TODO: I have an architecture/design mistake concerning the handling of error while parsing
 // First, the problem.
-// As it stands, the parsing pipeline is as follows: 
+// As it stands, the parsing pipeline is as follows:
 //
 // text -> extract template -> lexer -> parsing -> analysis
 //
@@ -28,7 +30,7 @@ import (
 // The issue with this design decision start with group-like template. For instance
 // `{{ if -- }} hello {{ end }}` has an error on the first template line, and because of this only "{{ end }}" token
 // will be output while lexing. Then you may ask, what may go wrong with this output ?
-// Well you see, every 'if' statement should be close by an 'end' statement. At least that's how the parser 
+// Well you see, every 'if' statement should be close by an 'end' statement. At least that's how the parser
 // expect thing to be. However, since the 'if' statement have been dropped, the analyzer will only see the "{{ end }}" AST
 // then it will swiftly report an Error
 // thus an error on "{{ if ... }}" during lexing trigger an automatic error on "{{ end }}" while parsing. That's just wrong
@@ -40,7 +42,7 @@ import (
 // first, is the tokens returned by the lexer. second, the lexer and parser should return failed tokens and ast all along
 //
 // For the first, `[]Token` should become `TokenFile struct { listToken [][]Token; listTokenSucessStatus []bool }` for the return type
-// Or maybe `TokenStatements { statement []Token; status bool }` and `TokenFile { line []TokenStatements }`. 
+// Or maybe `TokenStatements { statement []Token; status bool }` and `TokenFile { line []TokenStatements }`.
 // But I still wonder, is 'TokenFile' mandatory ?
 //
 // token < token line (statement == "{{ ... }}") < token file
@@ -48,8 +50,8 @@ import (
 // token file = list of token line
 //
 // For the second, the lexer and parser should do as much as possible to return the closest valid token/ast, so that
-// those tokens and their states (boolean status) are seen by the parser. The parser then could make adjustment onto which statement 
-// can return error while parsing. obviously, a line of tokens that have failed should in any case return a parse error, since the 
+// those tokens and their states (boolean status) are seen by the parser. The parser then could make adjustment onto which statement
+// can return error while parsing. obviously, a line of tokens that have failed should in any case return a parse error, since the
 // whole goal of this process is to make sure the 'analysis' phase do not output indesirable error to the user
 // On the same vain, a field should be added in the AST, allowing to identify whether the ast is failed parsing or not, since now all
 // failing and successful ast are returned. `ast { isParseError bool }`
@@ -82,7 +84,7 @@ func openProjectFilesSafely(rootDir, withFileExtension string, currentDepth, max
 
 		if entry.IsDir() {
 			subDir := fileName
-			subFiles := openProjectFilesSafely(subDir, withFileExtension, currentDepth + 1, maxDepth)
+			subFiles := openProjectFilesSafely(subDir, withFileExtension, currentDepth+1, maxDepth)
 
 			maps.Copy(fileNamesToContent, subFiles)
 			continue
@@ -157,16 +159,37 @@ func DefinitionAnalysisSingleFile(fileName string, parsedFilesInWorkspace map[st
 		return nil, nil
 	}
 
-	clonedParsedFilesInWorkspace := maps.Clone(parsedFilesInWorkspace)
-	delete(clonedParsedFilesInWorkspace, fileName)
+	workspaceTemplateDefinition, templateErrs := buildWorkspaceTemplateDefinition(parsedFilesInWorkspace)
+	file, errs := checker.DefinitionAnalysis(fileName, parseTreeActiveFile, workspaceTemplateDefinition)
 
-	workspaceTemplateDefinition := getWorkspaceTemplateDefinition(clonedParsedFilesInWorkspace)
+	// TODO: I am not sure about this one
+	errs = append(errs, templateErrs...)
 
-	if workspaceTemplateDefinition == nil {
-		panic("'global/local/funciton/template' definition is nil. that map should always be instanciated, even if empty, for 'DefinitionAnalysis' processing")
+	// WIP
+	// START DEBUG
+	//
+	for _, err := range errs {
+		log.Printf("\n --> err str = %s ::: full = %#v", err.GetError(), err)
 	}
 
-	file, errs := checker.DefinitionAnalysis(fileName, parseTreeActiveFile, workspaceTemplateDefinition)
+	log.Println("-----> 44334433 <----")
+	log.Printf("%#v\n", file)
+
+	for funcName, funcDefinition := range file.Functions {
+		if funcDefinition == nil {
+			log.Printf("func name = %s ::: type = %s\n", funcName, funcDefinition)
+			continue
+		}
+
+		log.Printf("func name = %s ::: type = %s\n", funcName, funcDefinition.Type)
+	}
+
+	if file.Root.ShortCut.CommentGoCode != nil {
+		// if file.Root.ShortCut.CommentGoCode.GoCode != nil {
+		log.Printf("func root go-code-comment : %s", file.Root.ShortCut.CommentGoCode.GoCode.String())
+	}
+	//
+	// END DEBUG
 
 	return file, errs
 }
@@ -179,33 +202,28 @@ func DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace map[string]*parser
 		return nil, nil
 	}
 
-	var cloneParsedFilesInWorkspace map[string]*parser.GroupStatementNode
-	var workspaceTemplateDefinition []*checker.TemplateDefinition
 	var errs []lexer.Error
-
 	analyzedFilesInWorkspace := make(map[string]*checker.FileDefinition)
+
+	workspaceTemplateDefinition, templateErrs := buildWorkspaceTemplateDefinition(parsedFilesInWorkspace)
 
 	for longFileName, fileParseTree := range parsedFilesInWorkspace {
 		if fileParseTree == nil {
 			continue
 		}
 
-		// a. Get all the template definition of other project files except the current/active one
-		cloneParsedFilesInWorkspace = maps.Clone(parsedFilesInWorkspace)
-		delete(cloneParsedFilesInWorkspace, longFileName)
-
-		workspaceTemplateDefinition = getWorkspaceTemplateDefinition(cloneParsedFilesInWorkspace)
-
-		if workspaceTemplateDefinition == nil {
-			panic("'global/local/funciton/template' definition is nil. that map should always be instanciated, even if empty, for 'DefinitionAnalysis' processing")
-		}
-
-		// b. With the template definition, begin file definition analysis
 		file, localErrs := checker.DefinitionAnalysis(longFileName, fileParseTree, workspaceTemplateDefinition)
 
 		analyzedFilesInWorkspace[longFileName] = file
 		errs = append(errs, localErrs...)
+
+		// DEBUG:
+		log.Println("-----> 33443344 <----")
+		log.Printf("%#v\n", file)
 	}
+
+	// TODO: not sure about this one
+	errs = append(errs, templateErrs...)
 
 	return analyzedFilesInWorkspace, errs
 }
@@ -242,7 +260,7 @@ func GetDependenciesFilesForTemplateCallWithinWorkspace(workspace map[string]*pa
 	for fileName, scope := range workspace {
 		visitor := &extractTemplateUse{}
 		visitor.templatesWithinWorkspace = templatesWithinWorkspace
-		visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{ fileName })
+		visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{fileName})
 
 		parser.Walk(visitor, scope)
 	}
@@ -252,18 +270,18 @@ func GetDependenciesFilesForTemplateCallWithinWorkspace(workspace map[string]*pa
 }
 
 type extractTemplateUse struct {
-	isRootVisited					bool
-	templatesWithinWorkspace	map[string][]*checker.TemplateDefinition
-	dependencyFileNames			[][]string
+	isRootVisited            bool
+	templatesWithinWorkspace map[string][]*checker.TemplateDefinition
+	dependencyFileNames      [][]string
 
-	singleFileDepencies			[]string
+	singleFileDepencies []string
 }
 
-func (v *extractTemplateUse) Visit (node parser.AstNode) parser.Visitor {
+func (v *extractTemplateUse) Visit(node parser.AstNode) parser.Visitor {
 
 	switch n := node.(type) {
 	case *parser.GroupStatementNode:
-		if ! v.isRootVisited {
+		if !v.isRootVisited {
 			v.isRootVisited = true
 			return v
 		}
@@ -284,7 +302,7 @@ func (v *extractTemplateUse) Visit (node parser.AstNode) parser.Visitor {
 		templateName := string(n.TemplateName.Value)
 		templatesFound, ok := v.templatesWithinWorkspace[templateName]
 		if !ok {
-			// when there is error, it is not the role of depency graph to report it 
+			// when there is error, it is not the role of depency graph to report it
 			// the only goal is report the depency graph and whether or not there is a cyclical depency
 			// the rest of the error (beside cyclical deps) are to be ignored and be handled
 			// by other form of analysis
@@ -300,11 +318,11 @@ func (v *extractTemplateUse) Visit (node parser.AstNode) parser.Visitor {
 			// explore parse tree of the 'template' in question to find its own depencies as well
 			visitor := &extractTemplateUse{}
 			visitor.templatesWithinWorkspace = v.templatesWithinWorkspace
-			visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{ fileName })
+			visitor.dependencyFileNames = append(visitor.dependencyFileNames, []string{fileName})
 
-			parser.Walk(visitor, templateDef.Node)		// Not sure about 'v', perhaps I should create another one
+			parser.Walk(visitor, templateDef.Node) // Not sure about 'v', perhaps I should create another one
 
-			// append the result to global dependency graph 
+			// append the result to global dependency graph
 		}
 
 		return v
@@ -332,7 +350,7 @@ func getRootTemplateDefinition(root *parser.GroupStatementNode, fileName string)
 			panic("unexpected 'nil' statement found in scope holder (group) while listing template definition available in parent scope")
 		}
 
-		if ! (statement.GetKind() == parser.KIND_DEFINE_TEMPLATE || statement.GetKind() == parser.KIND_BLOCK_TEMPLATE) {
+		if !(statement.GetKind() == parser.KIND_DEFINE_TEMPLATE || statement.GetKind() == parser.KIND_BLOCK_TEMPLATE) {
 			continue
 		}
 
@@ -367,6 +385,36 @@ func getRootTemplateDefinition(root *parser.GroupStatementNode, fileName string)
 	}
 
 	return listTemplateDefinition
+}
+
+// TODO: WIP
+func buildWorkspaceTemplateDefinition(parsedFilesInWorkspace map[string]*parser.GroupStatementNode) (map[*parser.GroupStatementNode]*checker.TemplateDefinition, []lexer.Error) {
+	handler := checker.NewTemplateDefinitionHandler(parsedFilesInWorkspace)
+
+	// main processing
+	for template := range handler.TemplateToFileName {
+		if handler.TemplateToDefinition[template] != nil {
+			continue
+		}
+
+		templateName := string(template.ControlFlow.(*parser.TemplateStatementNode).TemplateName.Value) // safe bc of 'NewTemplateDefinitionHandler()'
+		handler.BuildTemplateDefinition(template, templateName)
+	}
+
+	// error checking
+	if len(handler.TemplateToFileName) != len(handler.TemplateToDefinition) {
+		log.Printf("length mismatch between template existing and template analyzed\n"+
+			" handler.TemplateToFileName = %#v\n handler.TemplateToDefinition = %#v\n",
+			handler.TemplateToFileName, handler.TemplateToDefinition)
+		panic("length mismatch between template existing and template analyzed")
+	} else if handler.TemplateToDefinition == nil {
+		msg := "'TemplateToDefinition' cannot be 'nil' while at the end of 'buildWorkspaceTemplateDefinition' process"
+
+		log.Printf(msg+"\n handler = %#v\n", handler)
+		panic(msg)
+	}
+
+	return handler.TemplateToDefinition, handler.Errs
 }
 
 // Get a list of all template definition (identified with "define" keyword) within the workspace

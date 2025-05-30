@@ -12,15 +12,13 @@ type SymbolDefinition map[string]AstNode
 
 //go:generate go run ./generate.go
 type AstNode interface {
-	String()	string
-	GetKind()	Kind
-	GetRange()	lexer.Range
+	String() string
+	GetKind() Kind
+	GetRange() lexer.Range
 	SetKind(val Kind)
 	DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error
 	// typeAnalysis()
 }
-
-
 
 // type Kind int
 type Kind int
@@ -144,14 +142,41 @@ func (v TemplateStatementNode) DefinitionAnalysis(globalVariables, localVariable
 	panic("not useful anymore")
 }
 
+type groupStatementShortcut struct {
+	CommentGoCode *CommentNode
+
+	VariableDeclarations map[string]*VariableDeclarationNode
+
+	TemplateDefined  map[string]*GroupStatementNode
+	TemplateCallUsed map[string]*TemplateStatementNode
+	// TemplateCallUnresolved	map[string]*TemplateStatementNode
+	// TODO: remove this above 'TemplateCallUnresolved' and 'TemplateCallUsed'
+	// instead use 'TemplateCalls' to describe the union of both
+}
+
 type GroupStatementNode struct {
 	Kind
 	Range       lexer.Range
-	parent		*GroupStatementNode		// use 'isRoot' to check that the node is the ROOT
+	parent      *GroupStatementNode // use 'isRoot' to check that the node is the ROOT
 	ControlFlow AstNode
 	Statements  []AstNode
 	// ShortcutsNode struct { TemplateDefine, TemplateUse, VarDeclaration, CommentGoCode }
-	isRoot		bool			// only this is consistently enforced to determine whether a node is ROOT or not
+	ShortCut groupStatementShortcut
+	isRoot   bool // only this is consistently enforced to determine whether a node is ROOT or not
+}
+
+func NewGroupStatementNode(kind Kind, reach lexer.Range) *GroupStatementNode {
+	scope := &GroupStatementNode{
+		Kind:   kind,
+		Range:  reach,
+		isRoot: false,
+	}
+
+	scope.ShortCut.TemplateDefined = make(map[string]*GroupStatementNode)
+	scope.ShortCut.TemplateCallUsed = make(map[string]*TemplateStatementNode)
+	scope.ShortCut.VariableDeclarations = make(map[string]*VariableDeclarationNode)
+
+	return scope
 }
 
 func (g GroupStatementNode) GetKind() Kind {
@@ -174,15 +199,50 @@ func (g GroupStatementNode) IsRoot() bool {
 	return g.isRoot
 }
 
+/*
+func (g *GroupStatementNode) SetRoot(val bool) {
+	g.isRoot = val
+}
+*/
+
+func (g GroupStatementNode) IsTemplate() bool {
+	ok := false
+	ok = ok || g.Kind == KIND_DEFINE_TEMPLATE
+	ok = ok || g.Kind == KIND_BLOCK_TEMPLATE
+
+	if !ok {
+		return false
+	}
+
+	// make the template definition follow the standard
+	if g.ControlFlow == nil {
+		log.Printf("a template definition cannot have a 'nil' 'ControlFlow'\n"+
+			"templateGroup = %s", g)
+		panic("a template definition cannot have a 'nil' 'ControlFlow'")
+	}
+
+	// make the template definition follow the standard
+	if _, ok := g.ControlFlow.(*TemplateStatementNode); !ok {
+		log.Printf("template definition cannot have any 'ControlFlow' "+
+			"other than of type '*TemplateStatementNode'\n"+
+			"templateGroup = %s", g)
+		panic("template definition cannot have any 'ControlFlow' " +
+			"other than of type '*TemplateStatementNode'")
+	}
+
+	return true
+}
+
 func (v GroupStatementNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
 	panic("not useful anymore")
 }
 
 type CommentNode struct {
 	Kind
-	Range				lexer.Range
-	Value				*lexer.Token
-	GoCode			[]byte
+	Range lexer.Range
+	Value *lexer.Token
+	// GoCode			[]byte
+	GoCode *lexer.Token
 	// TODO: add those field for 'DefinitionAnalysis()'
 }
 

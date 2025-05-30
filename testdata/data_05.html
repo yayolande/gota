@@ -1,24 +1,6 @@
-{{/* go:code 
+{{- /* go:code  */ -}}
+ 
 
-type Input struct {
-	Name		string
-	Age		int
-	City		string
-}
-
-func (i Input) GetName() string
-
-func diction() 
-// func dict (string, a int) string
-func dict (string, int) (string, int)
-func ddd(dd) 
-func dd(d djd d) 
-func maso(_)
-func bro(_, _ string) string
-
-var nanomachine func(name string, exp int) int
-
-*/}}
 {{ }}
 
 {{ .Age }}
@@ -27,6 +9,7 @@ var nanomachine func(name string, exp int) int
 {{ . := 12 }}
 {{ . = 12 }}
 
+{{ dell }}
 {{ diction }}
 {{ dd "hell" }}
 {{ dict "hellen" "output" }}
@@ -54,9 +37,10 @@ var nanomachine func(name string, exp int) int
 
 source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is valid under html/template rule, make it pass
 
-{{- /*go:code func dandelion(int) int */ -}}
+{{- /*go:codes func dandelion(int) int */ -}}
 
 {{ }}
+{{ dandelion }}
 
 {{ | }}
 
@@ -91,4 +75,28 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 {{ template "tonton" . }}
 {{ template "tata" . }}
 
- 
+
+
+{{/* go:code 
+
+
+
+type Input struct {
+	Name		string
+	Age		int
+	City		string
+}
+
+func (i Input) GetName() string
+
+func diction() 
+// func dict (string, a int) string
+func dict (string, int) (string, int)
+func ddd(dd) 
+func dd(d djd d) 
+func maso(_)
+func bro(_, _ string) string
+
+var nanomachine func(name string, exp int) int
+
+*/}}

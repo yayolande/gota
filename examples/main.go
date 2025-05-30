@@ -16,7 +16,7 @@ func ddd(files ...int) {
 
 func main() {
 	// 0. Init
-	func () {
+	func() {
 		file, err := os.Create("log_main.txt")
 		if err != nil {
 			fmt.Println("error while creating log file; ", err.Error())
@@ -36,7 +36,6 @@ func main() {
 
 	fmt.Println(lexer.PrettyFormater(tokens))
 
-
 	return
 	// 1. Open all files under root directory
 	rootDir := "."
@@ -48,8 +47,9 @@ func main() {
 	_ = parseErrors
 
 	// fmt.Println(parser.PrettyFormater(parseErrors))
-	errs := gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)
+	file, errs := gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)
 	_ = errs
+	_ = file
 
 	return
 	// gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)
@@ -69,4 +69,3 @@ func main() {
 	// str := types.PrettyFormater(parseErrors)
 	// fmt.Println(str)
 }
-

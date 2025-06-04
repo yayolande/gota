@@ -1,4 +1,4 @@
-{{- /* go:code  */ -}}
+{{- /* fake go:code  */ -}}
  
 
 {{ }}
@@ -19,13 +19,20 @@
 {{ dict "222" 23 }}
 {{ brandon "mis" }}
 {{ $dict := "hello" }}
+
+{{ $new.num := 23 }}
+{{ $dict.num := 23 }}
+{{ $dict.num = 23 }}
+
 {{ $dict "jjjj" }}
 {{ $dict }}
 {{ dict }}
 {{ dandelion }}
 {{ $var := "hello" }}
+
 {{ $var = 23 }}
 
+{{ $var }}
 {{ $ := "elton" }}  // this one right here should be a big no-no, redefining $ is not good (analysis) although it is valid syntax
 {{ $. := "elton" }}  should through an error as well (bad syntax)
 {{ $.angolmoi }}		// should not through an error if '$' stills refer to initial input (only linting error is possible, not syntax error)
@@ -49,6 +56,7 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 {{ $val := "hello" }}
 
 {{ $val := "the storm" }}
+{{ . }}
 
 {{ define "rickus" }}
 	{{ $val := "calco" }}
@@ -62,6 +70,8 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 {{ define "rickus" }}
 {{ end }}
 
+{{ template "rickus" . }}
+
 {{ define "tonton" .Pal }}
 	{{ define "uncle" }}
 	{{ end }}
@@ -70,16 +80,25 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 {{ if ((true)) }}
 	{{ define "tata" }}
 	{{ end }}
+	{{ getName "dd" }}
 {{ end }}
 
 {{ template "tonton" . }}
 {{ template "tata" . }}
 
+{{/*s go:code func getName(name b) */}}
 
 
-{{/* go:code 
+{{/* 
 
 
+
+
+go:code     
+  
+func mistic(,
+
+var nam string
 
 type Input struct {
 	Name		string
@@ -87,11 +106,11 @@ type Input struct {
 	City		string
 }
 
+   func halo(, )      
 func (i Input) GetName() string
-
 func diction() 
 // func dict (string, a int) string
-func dict (string, int) (string, int)
+func dict (string, int) (string, error)
 func ddd(dd) 
 func dd(d djd d) 
 func maso(_)
@@ -100,3 +119,6 @@ func bro(_, _ string) string
 var nanomachine func(name string, exp int) int
 
 */}}
+
+{{ nanomachine }}
+

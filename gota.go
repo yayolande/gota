@@ -4,6 +4,7 @@ package gota
 
 import (
 	"bytes"
+	"errors"
 	// errors"
 	"fmt"
 	// go/types"
@@ -165,32 +166,6 @@ func DefinitionAnalysisSingleFile(fileName string, parsedFilesInWorkspace map[st
 	// TODO: I am not sure about this one
 	errs = append(errs, templateErrs...)
 
-	// WIP
-	// START DEBUG
-	//
-	for _, err := range errs {
-		log.Printf("\n --> err str = %s ::: full = %#v", err.GetError(), err)
-	}
-
-	log.Println("-----> 44334433 <----")
-	log.Printf("%#v\n", file)
-
-	for funcName, funcDefinition := range file.Functions {
-		if funcDefinition == nil {
-			log.Printf("func name = %s ::: type = %s\n", funcName, funcDefinition)
-			continue
-		}
-
-		log.Printf("func name = %s ::: type = %s\n", funcName, funcDefinition.Type)
-	}
-
-	if file.Root.ShortCut.CommentGoCode != nil {
-		// if file.Root.ShortCut.CommentGoCode.GoCode != nil {
-		log.Printf("func root go-code-comment : %s", file.Root.ShortCut.CommentGoCode.GoCode.String())
-	}
-	//
-	// END DEBUG
-
 	return file, errs
 }
 
@@ -216,10 +191,6 @@ func DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace map[string]*parser
 
 		analyzedFilesInWorkspace[longFileName] = file
 		errs = append(errs, localErrs...)
-
-		// DEBUG:
-		log.Println("-----> 33443344 <----")
-		log.Printf("%#v\n", file)
 	}
 
 	// TODO: not sure about this one
@@ -229,21 +200,22 @@ func DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace map[string]*parser
 }
 
 // TODO: not completed, need to receive the workspaceFiles (parsed and/or analyzed)
-func GoToDefinition(file *checker.FileDefinition, position lexer.Position) (fileName string, reach lexer.Range) {
+func GoToDefinition(file *checker.FileDefinition, position lexer.Position) (fileName string, reach lexer.Range, err error) {
 	tok, nodecontainer, parentScope, isTemplate := checker.FindAstNodeRelatedToPosition(file.Root, position)
 	if tok == nil {
 		log.Println("token not found for definition")
-		return "", lexer.Range{}
+		return "", lexer.Range{}, errors.New("meaningful token not found")
 	}
 
 	fileName, nodeDef, reach := checker.GoToDefinition(tok, nodecontainer, parentScope, file, isTemplate)
 	if nodeDef == nil {
-		return "", reach
+		return "", reach, errors.New("token definition not found anywhere")
 	}
 
-	return fileName, reach
+	return fileName, reach, nil
 }
 
+// TODO: This one is unused, should I remove it ?
 func GetDependenciesFilesForTemplateCallWithinWorkspace(workspace map[string]*parser.GroupStatementNode) (dependencies [][]string, errs []Error) {
 	templatesWithinWorkspace := make(map[string][]*checker.TemplateDefinition)
 
@@ -269,6 +241,7 @@ func GetDependenciesFilesForTemplateCallWithinWorkspace(workspace map[string]*pa
 	panic("not yet implemented")
 }
 
+// TODO: This one is unused, should I remove it ?
 type extractTemplateUse struct {
 	isRootVisited            bool
 	templatesWithinWorkspace map[string][]*checker.TemplateDefinition
@@ -417,6 +390,8 @@ func buildWorkspaceTemplateDefinition(parsedFilesInWorkspace map[string]*parser.
 	return handler.TemplateToDefinition, handler.Errs
 }
 
+// TODO: This one is unused, should I remove it ?
+//
 // Get a list of all template definition (identified with "define" keyword) within the workspace
 func getWorkspaceTemplateDefinition(parsedFilesInWorkspace map[string]*parser.GroupStatementNode) []*checker.TemplateDefinition {
 	var workspaceTemplateDefinition []*checker.TemplateDefinition
@@ -434,6 +409,7 @@ func getWorkspaceTemplateDefinition(parsedFilesInWorkspace map[string]*parser.Gr
 	return workspaceTemplateDefinition
 }
 
+// TODO: This one is unused, should I remove it ?
 func getBuiltinVariableDefinition() parser.SymbolDefinition {
 	globalVariables := parser.SymbolDefinition{
 		".": nil,
@@ -443,6 +419,7 @@ func getBuiltinVariableDefinition() parser.SymbolDefinition {
 	return globalVariables
 }
 
+// TODO: This one is unused, should I remove it ?
 func getBuiltinFunctionDefinition() parser.SymbolDefinition {
 	builtinFunctionDefinition := parser.SymbolDefinition{
 		"and":      nil,

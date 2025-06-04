@@ -331,10 +331,6 @@ func DefinitionAnalysis(fileName string, node *parser.GroupStatementNode, outter
 
 	fileInfo, globalVariables, localVariables := NewFileDefinition(fileName, node, outterTemplate)
 
-	// TODO: Change the 'any' type to a more specifique, dictated by 'go:code' or all usage of the root var '.'
-	globalVariables["."].Type = TYPE_ANY.Type()
-	globalVariables["$"].Type = TYPE_ANY.Type()
-
 	_, errs := definitionAnalysisRecursive(node, nil, fileInfo, globalVariables, localVariables)
 
 	return fileInfo, errs
@@ -417,7 +413,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 
 		if node.ControlFlow == nil {
 			log.Printf("fatal, 'controlFlow' not found for 'GroupStatementNode'. \n %s \n", node)
-			panic("this 'GroupStatementNode' expect a non-nil 'controlFlow' based on its type ('Kind')")
+			panic("this 'GroupStatementNode' expect a non-nil 'controlFlow' based on its type ('Kind') " + node.GetKind().String())
 		}
 
 		controlFlowType, errs = definitionAnalysisRecursive(node.ControlFlow, node, file, scopedGlobalVariables, localVariables)
@@ -425,7 +421,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 
 	// 3. Variables Scope
 	switch node.Kind {
-	case parser.KIND_IF, parser.KIND_ELSE, parser.KIND_ELSE_IF, parser.KIND_GROUP_STATEMENT, parser.KIND_END:
+	case parser.KIND_IF, parser.KIND_ELSE, parser.KIND_ELSE_IF, parser.KIND_END:
 
 	case parser.KIND_RANGE_LOOP, parser.KIND_WITH, parser.KIND_ELSE_WITH:
 		// TODO: I do believe those variable '$' and '.' should at some point be saved into the 'FileDefinition'
@@ -435,17 +431,20 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 
 		file.ScopeToVariables[node] = append(file.ScopeToVariables[node], scopedGlobalVariables["."])
 
-	case parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE:
+	case parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE, parser.KIND_GROUP_STATEMENT:
 
+		// TODO: I sould probably add 'parser.KIND_GROUP_STATEMENT' to this use case, it seems appropriate here
 		scopedGlobalVariables = make(map[string]*VariableDefinition)
 		localVariables = make(map[string]*VariableDefinition)
 
 		scopedGlobalVariables["."] = NewVariableDefinition(".", node, file.Name)
-		scopedGlobalVariables["$"] = scopedGlobalVariables["."]
+		scopedGlobalVariables["$"] = NewVariableDefinition("$", node, file.Name)
 
 		scopedGlobalVariables["."].Type = TYPE_ANY.Type()
-		scopedGlobalVariables["."].Range = node.Range
+		scopedGlobalVariables["$"].Type = TYPE_ANY.Type()
+
 		scopedGlobalVariables["."].IsUsedOnce = true
+		scopedGlobalVariables["$"].IsUsedOnce = true
 
 		// TODO: not sure about this one, perhaps I should use 'map' instead of 'slice' ???????
 		file.ScopeToVariables[node] = append(file.ScopeToVariables[node], scopedGlobalVariables["."])
@@ -456,6 +455,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 			typ, _ := definitionAnalysisComment(goCode, node, file, scopedGlobalVariables, localVariables)
 
 			scopedGlobalVariables["."].Type = typ[0]
+			scopedGlobalVariables["$"].Type = typ[0]
 		}
 
 		if node.GetKind() == parser.KIND_BLOCK_TEMPLATE {
@@ -716,8 +716,11 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 			// TODO: this one is not good
 			endPos.Column += endPos.Offset
 
-			distance := goAstPositionToRange(startPos, endPos)
-			function.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, distance)
+			relativeRangeFunction := goAstPositionToRange(startPos, endPos)
+			function.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, relativeRangeFunction)
+
+			// function.Range.Start.Line -= 2
+			// function.Range.End.Line -= 2
 
 			file.Functions[function.Name] = function
 			// WIP
@@ -2279,7 +2282,9 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 		for _, errScanner := range errorList {
 			// A. Build diagnostic errors
 			parseErr := NewParseErrorFromErrorList(errScanner, randomColumnOffset)
-			parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
+			// WIP
+			// parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
+			parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, parseErr.Range)
 			log.Println("comment scanner error :: ", parseErr)
 
 			errs = append(errs, parseErr)
@@ -2330,7 +2335,12 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 			},
 		}
 
-		parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
+		// WIP
+		// parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
+		parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, parseErr.Range)
+
+		log.Println("==> 1122")
+		log.Printf("%s\n ==> rangeError : %s\n", comment, parseErr.Range)
 
 		errs = append(errs, parseErr)
 	}
@@ -2571,6 +2581,11 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 // All in all, I really need a make hover for definition analysis. But this will wait after I have released the first version
 // and learend some theory and Data Structure related to 'Type Theory'
 func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, parentScope *parser.GroupStatementNode, file *FileDefinition, isTemplate bool) (fileName string, defFound parser.AstNode, reach lexer.Range) {
+	if file == nil {
+		log.Printf("File definition not found to compute Go-To Definition. Thus cannot find definition of node."+
+			"parentScope = %s\n parentNodeStatement = %s \n from = %s\n", parentScope, parentNodeStatement, from)
+		panic("File definition not found to compute Go-To Definition. Thus cannot find definition of node, " + from.String())
+	}
 	// 1. Try to find the template, if appropriate
 	if isTemplate {
 		name := string(from.Value)
@@ -2590,9 +2605,12 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 
 	name := string(from.Value)
 
-	// 2. Try to found the function
+	// 2. Try to find the function
 	functionFound := file.Functions[name]
 	if functionFound != nil {
+		log.Println("---> 7788")
+		log.Printf("function -- name = %s :: range = %s\n", functionFound.Name, functionFound.Range.String())
+
 		return functionFound.FileName, functionFound.Node, functionFound.Range
 	}
 
@@ -2600,6 +2618,7 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 	const MAX_LOOP_REPETITION int = 20
 	var count int = 0
 
+	// Bubble up until you find the scope where the variable is defined
 	for parentScope != nil {
 		count++
 		if count > MAX_LOOP_REPETITION {
@@ -2607,11 +2626,6 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 		}
 
 		scopedVariables := file.GetScopedVariables(parentScope)
-
-		if len(scopedVariables) == 0 {
-			parentScope = parentScope.Parent()
-			continue
-		}
 
 		variableFound, ok := scopedVariables[name]
 		if ok {
@@ -2652,5 +2666,12 @@ func reverseFindDefinitionWithinFile(leave *parser.GroupStatementNode, nameToFin
 */
 
 func goToDefinitionForFileNodeOnly(position lexer.Range) (node parser.AstNode, reach lexer.Range) {
+	panic("not implemented yet")
+}
+
+// WIP
+// This function is here to replace 'types.Identical()' because if the receiver var is 'any' type and new var is 'int'
+// there should be no issue since 'any' type include 'int' type. However, with 'types.Identical()' that's not the case
+func TypeMatch(receiver, target types.Type) bool {
 	panic("not implemented yet")
 }

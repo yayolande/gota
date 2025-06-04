@@ -75,6 +75,11 @@ func appendStatementToScopeShortcut(scope *GroupStatementNode, statement AstNode
 		templateNode := stmt.ControlFlow.(*TemplateStatementNode)
 		templateName := string(templateNode.TemplateName.Value)
 
+		if scope.ShortCut.TemplateDefined[templateName] != nil {
+			err := NewParseError(templateNode.TemplateName, errors.New("template already defined"))
+			return err
+		}
+
 		scope.ShortCut.TemplateDefined[templateName] = stmt
 
 	case *TemplateStatementNode:
@@ -823,7 +828,7 @@ func (p *Parser) doubleDeclarationAssignmentParser() (*VariableDeclarationNode, 
 
 func (p *Parser) initializationAssignmentParser() (*VariableAssignationNode, *ParseError) {
 	if !p.accept(lexer.DOLLAR_VARIABLE) {
-		err := NewParseError(p.peek(), errors.New("the variable name must start by '$' or '.', and only contains alphanumerical char"))
+		err := NewParseError(p.peek(), errors.New("the variable name must start by '$', and only contains alphanumerical char"))
 		return nil, err
 	}
 
@@ -1013,49 +1018,48 @@ func (p *Parser) symbolParser(expression *ExpressionNode, depth int) (int, *Pars
 }
 
 func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
-	comment := commentExpression.Value.Value
-	// comment = bytes.TrimPrefix(comment, []byte(" \n\r\t"))
-	comment = bytes.TrimSpace(comment)
-
 	const SEP_COMMENT_GOCODE = "go:code"
-	if !bytes.HasPrefix(comment, []byte(SEP_COMMENT_GOCODE)) {
+	comment := commentExpression.Value.Value
+
+	before, after, found := bytes.Cut(comment, []byte(SEP_COMMENT_GOCODE))
+	if !found {
 		log.Printf("SEP not found :: sep = %s :: comment = %q\n", SEP_COMMENT_GOCODE, comment)
 		return
 	}
 
-	start := len(SEP_COMMENT_GOCODE)
-	comment = comment[start:]
-
-	if len(comment) == 0 {
-		log.Printf("after SEP, comment too short comment = %q\n", comment)
+	if len(bytes.TrimSpace(before)) > 0 {
+		log.Printf("SEP obfuscated by garbage :: before sep = %q :: comment = %q\n", before, comment)
 		return
 	}
 
-	first := comment[0]
-	if !(first == ' ' || first == '\n' || first == '\t' || first == '\r') {
-		// TODO: report this error to user instead of only printing it in the log
+	// if bytes.TrimSpace(before) == 0; then execute below
+	comment = after
+
+	switch comment[0] {
+	case ' ', '\n', '\t', '\r', '\v', '\f': // unicode.IsSpace(rune(comment[0]))
+		// continue to next step succesfully
+	default:
+		// TODO: report this error to user instead of only printing it in the log ?
 		log.Printf("after SEP, no separation 'space' = %q\n", comment)
 		return
 	}
 
-	// comment = bytes.TrimLeft(comment, SEP_COMMENT_GOCODE)
-
 	initialLength := len(commentExpression.Value.Value)
 	finalLength := len(comment)
-	diff := initialLength - finalLength
+	indexStartGoCode := initialLength - finalLength
 
-	pos := lexer.ConvertSingleIndexToTextEditorPosition(commentExpression.Value.Value, diff)
+	relativePositionStartGoCode := lexer.ConvertSingleIndexToTextEditorPosition(commentExpression.Value.Value, indexStartGoCode)
 
 	reach := commentExpression.Range
-	reach.Start.Line += pos.Line
-	reach.Start.Character = pos.Character
+	reach.Start.Line += relativePositionStartGoCode.Line
+	reach.Start.Character = relativePositionStartGoCode.Character
 
 	commentExpression.GoCode = &lexer.Token{
 		ID:    lexer.COMMENT,
 		Range: reach,
 		Value: comment,
 	}
-	// commentExpression.GoCode = comment
+
 	log.Printf("\nHourray, go:code found : %q\n\n", comment)
 
 	log.Printf("go:code stuff:\n range comment = %s\n range gocode = %s \n",

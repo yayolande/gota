@@ -48,9 +48,17 @@ For debugging purpose, there is a `gota.Print()` function that convert the tree 
 - [x] Lexer 
 - [x] Syntax parser
 - [x] Definition Analysis (operation)
-- [ ] Type Analysis (operation on parse tree)
+- [x] Improve **Go-To-Definition**
+- [ ] **Go-To-Definition**: make it work with property ('$person.contact' or '.person.age') and method ('$city.getMayorName')
+- [ ] Add **Hover** feature
+- [ ] **Hover**: make it work with property ('$person.contact' or '.person.age') and method ('$city.getMayorName')
+- [ ] Replace 'types.Identical()' with a custom version, since the former handle poorly mixing of 'any' type with 'Basic' and 'Complex' type
+- [ ] Type inference for individual template global variable ('.' and '$')
+- [ ] Fix broken Tests
+- [ ] Dont forget to handle 'method' and 'property' for LSP feature (hover, etc)
+- [x] Type Analysis (operation on parse tree)
 - [ ] Find declaration of a variable and function
 - [ ] Get all symbol starting with specific string
-- [ ] Type hint analysis on comment (helpful to enforce type on lsp)
+- [x] Type hint analysis on comment (helpful to enforce type on lsp)
 - [ ] Add more examples and more docs to 'readme'
 

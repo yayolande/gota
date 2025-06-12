@@ -132,7 +132,6 @@ func extractTemplateCode(content []byte) ([][]byte, []Range) {
 
 	var ORIGINAL_CONTENT = content
 	var CLONED_CONTENT = bytes.Clone(content)
-	// content = bytes.Clone(content)
 	content = CLONED_CONTENT
 
 	var templateCode [][]byte
@@ -224,26 +223,38 @@ func extractTemplateCode(content []byte) ([][]byte, []Range) {
 }
 
 func ConvertSingleIndexToTextEditorPosition(buffer []byte, charIndex int) Position {
-	var index, characterCount int
-	var line int
+	var line, col int
 
-	for {
-		index = bytes.Index(buffer, []byte("\n"))
-		if characterCount+index > charIndex || index == -1 {
+	for i := 0; i < len(buffer); i++ {
+		if i == charIndex {
 			break
 		}
 
-		line++
-		characterCount += index + 1
-		buffer = buffer[index+1:]
+		if buffer[i] == byte('\n') {
+			line++
+			col = 0
+
+		} else {
+			col++
+		}
 	}
 
-	charPosition := Position{Line: (line), Character: (charIndex - characterCount)}
+	pos := Position{Line: line, Character: col}
 
-	return charPosition
+	return pos
 }
 
+// 'rangeIndex' is incluse at rangeIndex[0] but exclusive at rangeIndex[1] (eg. [a, b[)
 func convertRangeIndexToTextEditorPosition(editorContent []byte, rangeIndex []int, initialLine, initialColumn int) Range {
+	if rangeIndex[0] > rangeIndex[1] {
+		log.Printf("bad range formating.\n start = '%d' :: end = '%d'\n", rangeIndex[0], rangeIndex[1])
+		panic("bad range formating, 'end position' cannot be before 'start position'")
+	}
+
+	if rangeIndex[0] == rangeIndex[1] {
+		return Range{}
+	}
+
 	position := Range{}
 	position.Start = ConvertSingleIndexToTextEditorPosition(editorContent, rangeIndex[0])
 	position.End = ConvertSingleIndexToTextEditorPosition(editorContent, rangeIndex[1]-1)

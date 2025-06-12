@@ -28,11 +28,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 1},
-				End:   Position{Line: 0, Character: 5},
+				End:   Position{Line: 0, Character: 6},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 3, Character: 41},
-				End:   Position{Line: 3, Character: 45},
+				End:   Position{Line: 3, Character: 46},
 			},
 		},
 		{
@@ -43,11 +43,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 2, Character: 0},
-				End:   Position{Line: 2, Character: -1},
+				End:   Position{Line: 2, Character: 0},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 7, Character: 0},
-				End:   Position{Line: 7, Character: -1},
+				End:   Position{Line: 7, Character: 0},
 			},
 		},
 		{
@@ -58,11 +58,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 2, Character: 1},
-				End:   Position{Line: 2, Character: 0},
+				End:   Position{Line: 2, Character: 1},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 7, Character: 1},
-				End:   Position{Line: 7, Character: 0},
+				End:   Position{Line: 7, Character: 1},
 			},
 		},
 		{
@@ -73,11 +73,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 2, Character: 0},
-				End:   Position{Line: 2, Character: 0},
+				End:   Position{Line: 2, Character: 1},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 9, Character: 0},
-				End:   Position{Line: 9, Character: 0},
+				End:   Position{Line: 9, Character: 1},
 			},
 		},
 		{
@@ -103,11 +103,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 0},
-				End:   Position{Line: 2, Character: 0},
+				End:   Position{Line: 2, Character: 1},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 1, Character: 1},
-				End:   Position{Line: 3, Character: 0},
+				End:   Position{Line: 3, Character: 1},
 			},
 		},
 		{
@@ -118,11 +118,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 3},
-				End:   Position{Line: 2, Character: 0},
+				End:   Position{Line: 2, Character: 1},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 3, Character: 4},
-				End:   Position{Line: 5, Character: 0},
+				End:   Position{Line: 5, Character: 1},
 			},
 		},
 		{
@@ -133,11 +133,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 0},
-				End:   Position{Line: 2, Character: 3},
+				End:   Position{Line: 2, Character: 4},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 0, Character: 4},
-				End:   Position{Line: 2, Character: 3},
+				End:   Position{Line: 2, Character: 4},
 			},
 		},
 		{
@@ -148,11 +148,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 3},
-				End:   Position{Line: 2, Character: 5},
+				End:   Position{Line: 2, Character: 6},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 21, Character: 100},
-				End:   Position{Line: 23, Character: 5},
+				End:   Position{Line: 23, Character: 6},
 			},
 		},
 		{
@@ -163,11 +163,11 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 			},
 			expect: Range{
 				Start: Position{Line: 0, Character: 4},
-				End:   Position{Line: 2, Character: 7},
+				End:   Position{Line: 2, Character: 8},
 			},
 			expectBuffered: Range{
 				Start: Position{Line: 6, Character: 13},
-				End:   Position{Line: 8, Character: 7},
+				End:   Position{Line: 8, Character: 8},
 			},
 		},
 		{
@@ -200,6 +200,21 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 				End:   Position{Line: 9, Character: 3},
 			},
 		},
+		{
+			input: BufferPartition{
+				Content:                     []byte("\n\n\nddd"),
+				SelectionRange:              [2]int{0, 2},
+				ContentPositionWithinBuffer: Position{Line: 6, Character: 9},
+			},
+			expect: Range{
+				Start: Position{Line: 0, Character: 0},
+				End:   Position{Line: 2, Character: 0},
+			},
+			expectBuffered: Range{
+				Start: Position{Line: 6, Character: 9},
+				End:   Position{Line: 8, Character: 0},
+			},
+		},
 	}
 
 	for count, datium := range data {
@@ -210,7 +225,7 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			start := ConvertSingleIndexToTextEditorPosition(input.Content, input.SelectionRange[0])
-			end := ConvertSingleIndexToTextEditorPosition(input.Content, input.SelectionRange[1]-1)
+			end := ConvertSingleIndexToTextEditorPosition(input.Content, input.SelectionRange[1])
 
 			got := Range{Start: start, End: end}
 
@@ -223,13 +238,16 @@ func TestConvertToTextEditorPosition(t *testing.T) {
 		expected = datium.expectBuffered
 
 		t.Run(testName, func(t *testing.T) {
-			// loc := []int{ input.SelectionRange[], input.End }
 			loc := input.SelectionRange[:]
+
+			// This is done because 'convertRangeIndexToTextEditorPosition()'
+			// expect a half-open range [a, b[
+			// instead of the close range provided [a, b]
+			loc[1] += 1
 
 			col := input.ContentPositionWithinBuffer.Character
 			line := input.ContentPositionWithinBuffer.Line
 
-			// got := convertRangeIndexToTextEditorPosition(input.Content, loc, 0, 0)
 			got := convertRangeIndexToTextEditorPosition(input.Content, loc, line, col)
 
 			if got != expected {
@@ -318,6 +336,36 @@ func TestRangeContains(t *testing.T) {
 
 			if got != datium.expect {
 				t.Errorf("\n Expected %v ::: Got = %v\n", datium.expect, got)
+			}
+		})
+	}
+}
+
+func TestExtractTemplateCode(t *testing.T) {
+	data := []struct {
+		text   []byte
+		expect Range
+	}{
+		{
+			text: []byte("dd {{ $var := 23.3 }} tt"),
+			expect: Range{
+				Start: Position{Line: 0, Character: 5},
+				End:   Position{Line: 0, Character: 19}, // exclusive
+			},
+		},
+	}
+
+	for index, datium := range data {
+		name := fmt.Sprintf("Test_%d", index)
+
+		t.Run(name, func(t *testing.T) {
+			templateCode, positions := extractTemplateCode(datium.text)
+
+			_ = templateCode
+			got := positions[0]
+
+			if got != datium.expect {
+				t.Errorf("\n --> Expected %v \n --> Got = %v\n", datium.expect, got)
 			}
 		})
 	}

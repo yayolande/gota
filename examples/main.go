@@ -47,9 +47,8 @@ func main() {
 	_ = parseErrors
 
 	// fmt.Println(parser.PrettyFormater(parseErrors))
-	file, errs := gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)
-	_ = errs
-	_ = file
+	chainAnalyzedFiles := gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)
+	_ = chainAnalyzedFiles
 
 	return
 	// gota.DefinitionAnalisisWithinWorkspace(parsedFilesInWorkspace)

@@ -30,8 +30,9 @@ import (
 )
 
 var (
-	TYPE_ANY   = types.Universe.Lookup("any")
-	TYPE_ERROR = types.Universe.Lookup("error")
+	TYPE_ANY                                   = types.Universe.Lookup("any")
+	TYPE_ERROR                                 = types.Universe.Lookup("error")
+	TEMPLATE_MANAGER *WorkspaceTemplateManager = nil
 )
 
 func init() {
@@ -42,6 +43,8 @@ func init() {
 	if TYPE_ERROR == nil {
 		panic("initialization of 'error' type failed")
 	}
+
+	TEMPLATE_MANAGER = NewWorkspaceTemplateManager()
 }
 
 const (
@@ -66,114 +69,276 @@ const (
 // -------------------------
 
 // TODO: add 'Stringer' method for FunctionDefinition, VariableDefinition, DataStructureDefinition
+type NodeDefinition interface {
+	Name() string
+	FileName() string
+	Node() parser.AstNode
+	Range() lexer.Range
+	Type() types.Type
+	TypeString() string
+}
 
 type FunctionDefinition struct {
-	Node     parser.AstNode
-	Range    lexer.Range
-	FileName string
+	node parser.AstNode
+	// Range    lexer.Range
+	rng      lexer.Range
+	fileName string
 
 	// New comer to keep
-	Name string
-	Type *types.Signature
+	name string
+	typ  *types.Signature
+}
+
+func (f FunctionDefinition) Name() string {
+	return f.name
+}
+
+func (f FunctionDefinition) FileName() string {
+	return f.fileName
+}
+
+func (f FunctionDefinition) Type() types.Type {
+	return f.typ
+}
+
+func (f FunctionDefinition) Node() parser.AstNode {
+	return f.node
+}
+
+func (f FunctionDefinition) Range() lexer.Range {
+	return f.rng
+}
+
+func (f FunctionDefinition) TypeString() string {
+	buf := new(bytes.Buffer)
+	types.WriteSignature(buf, f.typ, nil)
+
+	str := "func " + f.name + " " + buf.String()
+
+	return str
 }
 
 type VariableDefinition struct {
-	Node           parser.AstNode // direct node containing info about this variable
-	Range          lexer.Range    // variable lifetime
-	FileName       string
-	Name           string
-	Type           types.Type
+	node     parser.AstNode // direct node containing info about this variable
+	rng      lexer.Range    // variable lifetime
+	fileName string
+	name     string
+	typ      types.Type
+
 	ImplicitType   map[string]types.Type // Guessed tree type through 'var' usage
 	IsValid        bool
 	IsUsedOnce     bool // Only useful to detect whether or not a variable have never been used in the program
 	UsageFrequency int
 }
 
+func (v VariableDefinition) Name() string {
+	return v.name
+}
+
+func (v VariableDefinition) FileName() string {
+	return v.fileName
+}
+
+func (v VariableDefinition) Type() types.Type {
+	return v.typ
+}
+
+func (v VariableDefinition) Node() parser.AstNode {
+	return v.node
+}
+
+func (v VariableDefinition) Range() lexer.Range {
+	return v.rng
+}
+
+func (v VariableDefinition) TypeString() string {
+	// WIP
+	// 2 use cases: 'Named' & Other type
+	//
+
+	str := v.typ.String()
+
+	switch v.typ.(type) {
+	case *types.Named:
+		str = v.typ.Underlying().String()
+
+	default:
+	}
+
+	str = "var " + v.name + " " + str
+
+	return str
+}
+
 type TemplateDefinition struct {
-	Node      parser.AstNode
-	Range     lexer.Range
-	FileName  string
-	Name      string
-	InputType types.Type
-	IsValid   bool
+	node      parser.AstNode
+	rng       lexer.Range
+	fileName  string
+	name      string
+	inputType types.Type
+	isValid   bool
+}
+
+func (t TemplateDefinition) Name() string {
+	return t.name
+}
+
+func (t TemplateDefinition) FileName() string {
+	return t.fileName
+}
+
+func (t TemplateDefinition) Type() types.Type {
+	return t.inputType
+}
+
+func (t TemplateDefinition) Node() parser.AstNode {
+	return t.node
+}
+
+func (t TemplateDefinition) Range() lexer.Range {
+	return t.rng
+}
+
+// TODO: refactor to take into account method name as well
+// type 'named' vs 'basic'
+func (t TemplateDefinition) TypeString() string {
+	str := "var _ " + t.inputType.Underlying().String()
+
+	return str
 }
 
 type FileDefinition struct {
-	Root *parser.GroupStatementNode
-	Name string
-
-	// TODO: do the same for 'ScopeToVariables'
-	TypeHints        map[*parser.GroupStatementNode]types.Type
-	ScopeToVariables map[*parser.GroupStatementNode][]*VariableDefinition // TODO: CHANGE THIS TO A 'MAP' !
-
-	Functions map[string]*FunctionDefinition
-	Templates map[string]*TemplateDefinition
+	root                         *parser.GroupStatementNode
+	name                         string
+	typeHints                    map[*parser.GroupStatementNode]types.Type // ???
+	scopeToVariables             map[*parser.GroupStatementNode](map[string]*VariableDefinition)
+	functions                    map[string]*FunctionDefinition
+	templates                    map[string]*TemplateDefinition
+	isTemplateDependencyAnalyzed bool
 	// WorkspaceTemplates	map[string]*TemplateDefinition
 }
 
-// func NewFileDefinition(fileName string, root *parser.GroupStatementNode, outterTemplate []*TemplateDefinition) (*FileDefinition, map[string]*VariableDefinition, map[string]*VariableDefinition) {
-func NewFileDefinition(fileName string, root *parser.GroupStatementNode, outterTemplate map[*parser.GroupStatementNode]*TemplateDefinition) (*FileDefinition, map[string]*VariableDefinition, map[string]*VariableDefinition) {
-	fileInfo := new(FileDefinition)
+func (f FileDefinition) Name() string {
+	return f.name
+}
 
-	fileInfo.Name = fileName
-	fileInfo.Root = root
-	fileInfo.TypeHints = make(map[*parser.GroupStatementNode]types.Type)
-	fileInfo.Templates = make(map[string]*TemplateDefinition)
+func (f FileDefinition) FileName() string {
+	return f.name
+}
+
+func (f FileDefinition) Type() types.Type {
+	return f.typeHints[f.root]
+}
+
+func (f FileDefinition) Node() parser.AstNode {
+	return f.root
+}
+
+func (f FileDefinition) Range() lexer.Range {
+	return f.root.Range()
+}
+
+func (f FileDefinition) TypeString() string {
+	return f.Type().String()
+}
+
+func (f FileDefinition) Root() *parser.GroupStatementNode {
+	return f.root
+}
+
+func NewFileDefinition(fileName string, root *parser.GroupStatementNode, outterTemplate map[*parser.GroupStatementNode]*TemplateDefinition) (*FileDefinition, map[string]*VariableDefinition, map[string]*VariableDefinition) {
+	file := new(FileDefinition)
+
+	file.name = fileName
+	file.root = root
+	file.isTemplateDependencyAnalyzed = false
+
+	file.typeHints = make(map[*parser.GroupStatementNode]types.Type)
+	file.templates = make(map[string]*TemplateDefinition)
 
 	// 2. build external templates available for the current file
-	foundOnce := make(map[string]bool)
+	foundMoreThanOnce := make(map[string]bool)
 
 	for templateNode, templateDef := range outterTemplate {
-		templateName := string(templateNode.ControlFlow.(*parser.TemplateStatementNode).TemplateName.Value)
+		templateName := templateNode.TemplateName()
 
-		def := fileInfo.Templates[templateName]
+		def := file.templates[templateName]
 
 		if def != nil {
 
-			if !foundOnce[templateName] {
+			if !foundMoreThanOnce[templateName] {
 				defAny := &TemplateDefinition{
-					InputType: TYPE_ANY.Type(),
-					FileName:  "",
-					Node:      nil,
+					inputType: TYPE_ANY.Type(),
+					fileName:  "",
+					node:      nil,
 				}
 
-				fileInfo.Templates[templateName] = defAny
+				file.templates[templateName] = defAny
 			}
 
-			foundOnce[templateName] = true
+			foundMoreThanOnce[templateName] = true
 			continue
 		}
 
-		fileInfo.Templates[templateName] = templateDef
+		file.templates[templateName] = templateDef
+		foundMoreThanOnce[templateName] = false
 	}
 
-	// fileInfo.Templates = make(map[string]*TemplateDefinition)
-	fileInfo.Functions = getBuiltinFunctionDefinition()
-	fileInfo.ScopeToVariables = make(map[*parser.GroupStatementNode][]*VariableDefinition)
+	file.functions = getBuiltinFunctionDefinition()
+	file.scopeToVariables = make(map[*parser.GroupStatementNode]map[string]*VariableDefinition)
 
-	globalVariables := make(map[string]*VariableDefinition)
-	localVariables := make(map[string]*VariableDefinition)
+	globalVariables, localVariables := NewGlobalAndLocalVariableDefinition(nil, fileName)
 
-	globalVariables["."] = NewVariableDefinition(".", nil, fileName)
-	globalVariables["$"] = NewVariableDefinition("$", nil, fileName)
-
-	return fileInfo, globalVariables, localVariables
+	return file, globalVariables, localVariables
 }
 
+func NewFileDefinitionFromPartialFile(partialFile *FileDefinition, outterTemplate map[*parser.GroupStatementNode]*TemplateDefinition) (*FileDefinition, map[string]*VariableDefinition, map[string]*VariableDefinition) {
+	if partialFile == nil {
+		log.Printf("got a <nil> partial File\n")
+		panic("got a <nil> partial File")
+	}
+
+	if partialFile.root == nil {
+		log.Printf("partial file without root parse tree found at start definition analysis"+
+			"\n fileName = %s\n", partialFile.FileName())
+		panic("partial file without root parse tree found at start definition analysis")
+	}
+
+	if partialFile.name == "" {
+		panic("partial file cannot have empty file name")
+	}
+
+	file, globalVariables, localVariables := NewFileDefinition(partialFile.FileName(), partialFile.root, outterTemplate)
+
+	// TODO: should I do a deep clone instead of a shallow one ???
+	file.root = partialFile.root
+	file.functions = partialFile.functions
+
+	file.scopeToVariables = partialFile.scopeToVariables
+
+	return file, globalVariables, localVariables
+}
+
+func NewTemplateDefinition(name string, fileName string, node parser.AstNode, rng lexer.Range, typ types.Type, isValid bool) *TemplateDefinition {
+	def := &TemplateDefinition{}
+	def.name = name
+	def.fileName = fileName
+	def.node = node
+	def.rng = rng
+	def.isValid = isValid
+	def.inputType = typ
+
+	return def
+}
+
+// TODO: remove this function and use *parser.GroupStatementNode.ShortCut.VariableDeclarations
+// But seriously, I am sure sure about it since 'VariableDeclarationNode' is defined in 'parser' package
+// but the 'VariableDefinition' is instead defined in 'analyzer'
+// Mixing both DS will create a cyclical import issue
 func (f FileDefinition) GetScopedVariables(scope *parser.GroupStatementNode) map[string]*VariableDefinition {
-	scopedVariables := make(map[string]*VariableDefinition)
-
-	if scope == nil || f.ScopeToVariables == nil {
-		return scopedVariables
-	}
-
-	listVariables, found := f.ScopeToVariables[scope]
-	if !found {
-		return scopedVariables
-	}
-
-	for _, variable := range listVariables {
-		scopedVariables[variable.Name] = variable
+	scopedVariables := f.scopeToVariables[scope]
+	if scopedVariables == nil {
+		scopedVariables = make(map[string]*VariableDefinition)
 	}
 
 	return scopedVariables
@@ -185,12 +350,12 @@ func CloneTemplateDefinition(src *TemplateDefinition) *TemplateDefinition {
 	}
 
 	dst := &TemplateDefinition{
-		Node:      src.Node,
-		Range:     src.Range,
-		FileName:  src.FileName,
-		Name:      src.Name,
-		InputType: src.InputType,
-		IsValid:   src.IsValid,
+		node:      src.Node(),
+		rng:       src.Range(),
+		fileName:  src.fileName,
+		name:      src.Name(),
+		inputType: src.inputType,
+		isValid:   src.isValid,
 	}
 
 	return dst
@@ -263,6 +428,7 @@ func (f FileDefinition) GetSingleTemplateDefinitionByName(templateName string) *
 
 // TODO: this need some more work to be usable universally by all files within need to be recreated each time
 // TODO:	add types to every builtin functions
+// WIP
 func getBuiltinFunctionDefinition() map[string]*FunctionDefinition {
 	dict := parser.SymbolDefinition{
 		"and":      nil,
@@ -296,9 +462,9 @@ func getBuiltinFunctionDefinition() map[string]*FunctionDefinition {
 
 	for key, val := range dict {
 		def = &FunctionDefinition{}
-		def.Name = key
-		def.Node = val
-		def.FileName = "builtin"
+		def.name = key
+		def.node = val
+		def.fileName = "builtin"
 
 		builtinFunctionDefinition[key] = def
 	}
@@ -306,22 +472,49 @@ func getBuiltinFunctionDefinition() map[string]*FunctionDefinition {
 	return builtinFunctionDefinition
 }
 
+func NewGlobalAndLocalVariableDefinition(node parser.AstNode, fileName string) (map[string]*VariableDefinition, map[string]*VariableDefinition) {
+	globalVariables := make(map[string]*VariableDefinition)
+	localVariables := make(map[string]*VariableDefinition)
+
+	localVariables["."] = NewVariableDefinition(".", nil, fileName)
+	localVariables["$"] = NewVariableDefinition("$", nil, fileName)
+
+	return globalVariables, localVariables
+}
+
 func NewVariableDefinition(variableName string, node parser.AstNode, fileName string) *VariableDefinition {
 	def := &VariableDefinition{}
 
-	def.Name = variableName
-	def.FileName = fileName
+	def.name = variableName
+	def.fileName = fileName
 
 	def.ImplicitType = make(map[string]types.Type)
-	def.Type = TYPE_ANY.Type()
+	def.typ = TYPE_ANY.Type()
 	def.IsValid = true
 
 	if node != nil {
-		def.Node = node
-		def.Range = node.GetRange()
+		def.node = node
+		def.rng = node.Range()
 	}
 
 	return def
+}
+
+func DefinitionAnalysisFromPartialFile(partialFile *FileDefinition, outterTemplate map[*parser.GroupStatementNode]*TemplateDefinition) (*FileDefinition, []lexer.Error) {
+	if partialFile == nil {
+		log.Printf("expected a partial file but got <nil> for 'DefinitionAnalysisFromPartialFile()'")
+		panic("expected a partial file but got <nil> for 'DefinitionAnalysisFromPartialFile()'")
+	}
+
+	file, globalVariables, localVariables := NewFileDefinitionFromPartialFile(partialFile, outterTemplate)
+	file.isTemplateDependencyAnalyzed = true
+
+	typ, errs := definitionAnalysisRecursive(file.root, nil, file, globalVariables, localVariables)
+
+	_ = typ
+	// file.typeHints[file.root] = typ[0]
+
+	return file, errs
 }
 
 func DefinitionAnalysis(fileName string, node *parser.GroupStatementNode, outterTemplate map[*parser.GroupStatementNode]*TemplateDefinition) (*FileDefinition, []lexer.Error) {
@@ -346,12 +539,6 @@ func definitionAnalysisRecursive(node parser.AstNode, parent *parser.GroupStatem
 
 	switch n := node.(type) {
 	case *parser.GroupStatementNode:
-
-		// only useful to set 'file.Functions' and 'file.TypeHints[node]'
-		if n.ShortCut.CommentGoCode != nil {
-			definitionAnalysisComment(n.ShortCut.CommentGoCode, n, file, globalVariables, localVariables)
-		}
-
 		statementType, errs = definitionAnalysisGroupStatement(n, parent, file, globalVariables, localVariables)
 
 	case *parser.TemplateStatementNode:
@@ -378,7 +565,7 @@ func definitionAnalysisRecursive(node parser.AstNode, parent *parser.GroupStatem
 	return statementType, errs
 }
 
-func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
 	if globalVariables == nil || localVariables == nil {
 		panic("arguments global/local/function/template defintion for 'DefinitionAnalysis()' shouldn't be 'nil' for 'GroupStatementNode'")
 	}
@@ -387,80 +574,74 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 		panic("only root node can be flaged as 'root' and with 'parent == nil'")
 	}
 
-	// NOTE: However non-root element could have 'v.parent == nil' when an error occurs
-
 	// 1. Variables Init
 	scopedGlobalVariables := map[string]*VariableDefinition{}
-	// scopedTemplateDefinitionLocal := map[string]parser.AstNode{}
 
 	maps.Copy(scopedGlobalVariables, globalVariables)
 	maps.Copy(scopedGlobalVariables, localVariables)
-	// maps.Copy(scopedTemplateDefinitionLocal, templateDefinitionsLocal)
 
 	localVariables = map[string]*VariableDefinition{} // 'localVariables' lost reference to the parent 'map', so no need to worry using it
 
 	var errs []lexer.Error
 	var localErrs []lexer.Error
+
 	var controlFlowType [2]types.Type
+	var scopeType [2]types.Type
 
 	controlFlowType[0] = TYPE_ANY.Type()
 	controlFlowType[1] = TYPE_ERROR.Type()
 
+	scopeType[0] = TYPE_ANY.Type()
+	scopeType[1] = TYPE_ERROR.Type()
+
 	// 2. ControlFlow analysis
-	switch node.Kind {
+	switch node.Kind() {
 	case parser.KIND_IF, parser.KIND_ELSE_IF, parser.KIND_RANGE_LOOP, parser.KIND_WITH,
 		parser.KIND_ELSE_WITH, parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE:
 
 		if node.ControlFlow == nil {
 			log.Printf("fatal, 'controlFlow' not found for 'GroupStatementNode'. \n %s \n", node)
-			panic("this 'GroupStatementNode' expect a non-nil 'controlFlow' based on its type ('Kind') " + node.GetKind().String())
+			panic("this 'GroupStatementNode' expect a non-nil 'controlFlow' based on its type ('Kind') " + node.Kind().String())
 		}
 
 		controlFlowType, errs = definitionAnalysisRecursive(node.ControlFlow, node, file, scopedGlobalVariables, localVariables)
 	}
 
-	// 3. Variables Scope
-	switch node.Kind {
+	// 3. Set Variables Scope
+	// TODO: Use the new 'node.IsGroupWithNoVariableReset()' and the like
+	switch node.Kind() {
 	case parser.KIND_IF, parser.KIND_ELSE, parser.KIND_ELSE_IF, parser.KIND_END:
 
 	case parser.KIND_RANGE_LOOP, parser.KIND_WITH, parser.KIND_ELSE_WITH:
-		// TODO: I do believe those variable '$' and '.' should at some point be saved into the 'FileDefinition'
 
-		scopedGlobalVariables["."] = NewVariableDefinition(".", node.ControlFlow, file.Name)
-		scopedGlobalVariables["."].Type = controlFlowType[0]
+		localVariables["."] = NewVariableDefinition(".", node.ControlFlow, file.Name())
 
-		file.ScopeToVariables[node] = append(file.ScopeToVariables[node], scopedGlobalVariables["."])
+		localVariables["."].typ = controlFlowType[0]
 
 	case parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE, parser.KIND_GROUP_STATEMENT:
 
-		// TODO: I sould probably add 'parser.KIND_GROUP_STATEMENT' to this use case, it seems appropriate here
 		scopedGlobalVariables = make(map[string]*VariableDefinition)
 		localVariables = make(map[string]*VariableDefinition)
 
-		scopedGlobalVariables["."] = NewVariableDefinition(".", node, file.Name)
-		scopedGlobalVariables["$"] = NewVariableDefinition("$", node, file.Name)
+		localVariables["."] = NewVariableDefinition(".", node, file.name)
+		localVariables["$"] = NewVariableDefinition("$", node, file.name)
 
-		scopedGlobalVariables["."].Type = TYPE_ANY.Type()
-		scopedGlobalVariables["$"].Type = TYPE_ANY.Type()
+		localVariables["."].IsUsedOnce = true
+		localVariables["$"].IsUsedOnce = true
 
-		scopedGlobalVariables["."].IsUsedOnce = true
-		scopedGlobalVariables["$"].IsUsedOnce = true
+		commentGoCode := node.ShortCut.CommentGoCode
+		if commentGoCode != nil {
+			_, localErrs := definitionAnalysisComment(commentGoCode, node, file, scopedGlobalVariables, localVariables)
 
-		// TODO: not sure about this one, perhaps I should use 'map' instead of 'slice' ???????
-		file.ScopeToVariables[node] = append(file.ScopeToVariables[node], scopedGlobalVariables["."])
-		file.ScopeToVariables[node] = append(file.ScopeToVariables[node], scopedGlobalVariables["$"])
+			localVariables["$"].rng = localVariables["."].Range()
+			localVariables["$"].typ = localVariables["."].Type()
 
-		goCode := node.ShortCut.CommentGoCode
-		if goCode != nil {
-			typ, _ := definitionAnalysisComment(goCode, node, file, scopedGlobalVariables, localVariables)
-
-			scopedGlobalVariables["."].Type = typ[0]
-			scopedGlobalVariables["$"].Type = typ[0]
+			errs = append(errs, localErrs...)
 		}
 
-		if node.GetKind() == parser.KIND_BLOCK_TEMPLATE {
+		if node.Kind() == parser.KIND_BLOCK_TEMPLATE {
 			expressionType := controlFlowType[0].Underlying()
-			templateType := scopedGlobalVariables["."].Type.Underlying()
+			templateType := localVariables["."].Type().Underlying()
 
 			// TODO: change this to allow 'expressionType' to contains more than 'templateType' field
 			// eg. "expressionType = struct { name string, age int }" and "templateType = struct { name string }"
@@ -468,7 +649,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 			// hint: look at 'types.Implement()', 'types.Satisfies()' and the like first	[those are not useful after all]
 			if !types.Identical(expressionType, templateType) {
 				err := parser.NewParseError(&lexer.Token{}, errTypeMismatch)
-				err.Range = node.ControlFlow.GetRange()
+				err.Range = node.ControlFlow.Range()
 
 				errs = append(errs, err)
 			}
@@ -487,6 +668,17 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 			panic("statement within 'GroupStatementNode' cannot be nil. make to find where this nil value has been introduced and rectify it")
 		}
 
+		// skip already analyzed 'goCode' (done above)
+		if statement == node.ShortCut.CommentGoCode {
+			continue
+		}
+
+		// skip template scope analysis if already done before during template dependencies analysis
+		scope, isScope := statement.(*parser.GroupStatementNode)
+		if isScope && scope.IsTemplate() && file.isTemplateDependencyAnalyzed {
+			continue
+		}
+
 		// Make DefinitionAnalysis for every children
 		statementType, localErrs = definitionAnalysisRecursive(statement, node, file, scopedGlobalVariables, localVariables)
 		errs = append(errs, localErrs...)
@@ -497,7 +689,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 		}
 
 		err := parser.NewParseError(&lexer.Token{}, errTypeMismatch)
-		err.Range = statement.GetRange()
+		err.Range = statement.Range()
 		errs = append(errs, err)
 	}
 
@@ -509,21 +701,50 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, parent *p
 
 		msg := "variable is never used"
 		err := parser.NewParseError(&lexer.Token{}, errors.New(msg))
-		err.Range = def.Node.GetRange()
+		err.Range = def.Node().Range()
 
 		errs = append(errs, err)
 	}
 
+	// TODO: the idea is correct, but the way I am going about it is dubious at best
 	// Implicitly guess the type of var '.' if no type is found (empty or 'any')
-	if node.Kind == parser.KIND_DEFINE_TEMPLATE || node.Kind == parser.KIND_BLOCK_TEMPLATE {
-		typ := guessVariableTypeFromImplicitType(scopedGlobalVariables["."])
-		scopedGlobalVariables["."].Type = typ
+	// WARNING: only apply this if the current '.' and '$' are of type 'any'
+	// if node.Kind() == parser.KIND_DEFINE_TEMPLATE || node.Kind() == parser.KIND_BLOCK_TEMPLATE {
+	if node.IsGroupWithDollarDotVariableReset() {
+		// What about '$'. It is nice and all to guess for '.', but what about '$' variable ?
+		typ := guessVariableTypeFromImplicitType(localVariables["."])
+		localVariables["."].typ = typ
+		localVariables["$"].typ = typ
 	}
 
-	// file.TypeHints[node] = controlFlowType[0]
-	file.TypeHints[node] = scopedGlobalVariables["."].Type
+	// set type of the scope
+	/*
+		switch node.Kind() {
+		case parser.KIND_IF, parser.KIND_ELSE, parser.KIND_ELSE_IF, parser.KIND_END:
+		default:
+			file.typeHints[node] = localVariables["."].typ
+		}
+	*/
 
-	return controlFlowType, errs
+	if node.IsGroupWithDotVariableReset() || node.IsGroupWithDollarDotVariableReset() {
+		file.typeHints[node] = localVariables["."].typ
+	}
+
+	// WIP
+	if node.IsTemplate() {
+		// name := node
+		// file.templates[name].inputType = localVariables["."].typ
+		file.typeHints[node] = localVariables["."].typ
+	}
+
+	if localVariables["."] != nil {
+		scopeType[0] = localVariables["."].typ
+	}
+
+	// save all local variables for the current scope; and set the type hint
+	file.scopeToVariables[node] = localVariables
+
+	return scopeType, errs
 }
 
 func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
@@ -550,11 +771,11 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 	}
 
 	// 2. template name analysis
-	switch node.Kind {
+	switch node.Kind() {
 	case parser.KIND_USE_TEMPLATE:
 		templateName := string(node.TemplateName.Value)
 
-		templateDef, found := file.Templates[templateName]
+		templateDef, found := file.templates[templateName]
 		if !found {
 			err := parser.NewParseError(node.TemplateName, errTemplateUndefined)
 			errs = append(errs, err)
@@ -565,7 +786,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 		if templateDef == nil {
 			log.Printf("found nil 'TemplateDefinition' for an existing template.\n file def = %#v\n", file)
 			panic("'TemplateDefinition' cannnot be nil for an existing template")
-		} else if templateDef.InputType == nil {
+		} else if templateDef.inputType == nil {
 			log.Printf("defined template cannot have 'nil' InputType\n def = %#v", templateDef)
 			panic("defined template cannot have 'nil' InputType")
 		}
@@ -574,13 +795,13 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 		if expressionType[0] == nil {
 			err := parser.NewParseError(node.TemplateName, errors.New(""))
 			err.Range.Start = node.TemplateName.Range.End
-			err.Range.End = node.Range.End
+			err.Range.End = node.Range().End
 			errs = append(errs, err)
 
 			return invalidTypes, errs
 		}
 
-		if !types.Identical(templateDef.InputType.Underlying(), expressionType[0].Underlying()) {
+		if !types.Identical(templateDef.inputType.Underlying(), expressionType[0].Underlying()) {
 			err := parser.NewParseError(node.TemplateName, errTypeMismatch)
 			errs = append(errs, err)
 
@@ -600,7 +821,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 
 		if node.Expression != nil {
 			err := parser.NewParseError(&lexer.Token{}, errors.New("template define/block didn't expect an expression"))
-			err.Range = node.Expression.GetRange()
+			err.Range = node.Expression.Range()
 			errs = append(errs, err)
 		}
 
@@ -635,7 +856,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 				"the template definition and block template must have a parent which will contain all the statements inside the template")
 		}
 
-		if node.Parent().Kind != node.Kind {
+		if node.Parent().Kind() != node.Kind() {
 			panic("value mismatch. 'TemplateStatementNode.Kind' and 'TemplateStatementNode.parent.Kind' must similar")
 		}
 	default:
@@ -649,7 +870,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 // TODO: refactor this function, too many ugly code in here
 // Only one 'go:code' allowed by files, the other one will be reported as error and discarded in the subsequent computation
 // During this phase 'file' argument is modified (file.Functions)
-func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.GroupStatementNode, file *FileDefinition, _, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
 	commentType := [2]types.Type{
 		TYPE_ANY.Type(),
 		TYPE_ERROR.Type(),
@@ -657,18 +878,23 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 
 	if comment == nil {
 		return commentType, nil
-		// panic("'CommentNode' cannot be 'nil' while its definition analysis in ongoing")
 	}
 
 	if parentScope == nil {
 		panic("'CommentNode' cannot be parentless, it shoud be contain in at least 1 one scope")
 	}
 
-	if comment.Kind != parser.KIND_COMMENT {
+	if comment.Kind() != parser.KIND_COMMENT {
 		panic("found value mismatch for 'CommentNode.Kind' during DefinitionAnalysis().\n " + comment.String())
 	}
 
 	if comment.GoCode == nil {
+		return commentType, nil
+	}
+
+	// Do not analyze orphaned 'GoCode'
+	// Correct 'GoCode' is available in parent scope
+	if comment != parentScope.ShortCut.CommentGoCode {
 		return commentType, nil
 	}
 
@@ -698,6 +924,7 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 	}
 
 	pkg, _ := config.Check("", fileSet, []*ast.File{goNode}, info)
+	var errComments []lexer.Error
 
 	for _, name := range pkg.Scope().Names() {
 		obj := pkg.Scope().Lookup(name)
@@ -705,101 +932,78 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 		switch typ := obj.Type().(type) {
 		case *types.Signature:
 			function := &FunctionDefinition{}
-			function.Node = comment
-			function.Name = obj.Name()
-			function.FileName = file.Name
-			function.Type = typ
+			function.node = comment
+			function.name = obj.Name()
+			function.fileName = file.Name()
+			function.typ = typ
 
 			startPos := fileSet.Position(obj.Pos())
 			endPos := fileSet.Position(obj.Pos())
-
-			// TODO: this one is not good
 			endPos.Column += endPos.Offset
 
 			relativeRangeFunction := goAstPositionToRange(startPos, endPos)
-			function.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, relativeRangeFunction)
+			function.rng = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, relativeRangeFunction)
 
-			// function.Range.Start.Line -= 2
-			// function.Range.End.Line -= 2
+			if !parentScope.IsRoot() {
+				err := parser.NewParseError(comment.GoCode, errors.New("function cannot be declared outside root scope"))
+				err.Range = function.Range()
+				errComments = append(errComments, err)
 
-			file.Functions[function.Name] = function
-			// WIP
+				continue
+			}
+
+			file.functions[function.Name()] = function
+
 			// DEBUG
-			log.Printf("go:code fun :: fn = %s ::: range = %s", function.Name, function.Range)
+			log.Printf("go:code fun :: fn = %s ::: range = %s", function.Name(), function.Range())
 
 		case *types.Named, *types.Struct:
+			/*
+				log.Println("2255 named")
+				log.Println("obj found = ", obj, " ---> typ found = ", typ.Underlying())
+
+				named := typ.(*types.Named)
+				log.Println("named method count = ", named.NumMethods())
+				for i := 0; i < named.NumMethods(); i++ {
+					log.Println("------> method ", i, " = ", named.Method(i))
+					log.Println("------> method ", i, " = ", named.Method(i).Signature())
+					log.Println("------> method ", i, " = ", named.Method(i).Type().Underlying())
+				}
+			*/
+
 			if obj.Name() != "Input" {
 				continue
 			}
+
+			if localVariables["."] == nil {
+				continue
+			}
+
+			commentType[0] = typ
+
+			startPos := fileSet.Position(obj.Pos())
+			endPos := fileSet.Position(obj.Pos())
+			endPos.Column += endPos.Offset
+
+			relativeRangeFunction := goAstPositionToRange(startPos, endPos)
+
+			localVariables["."].rng = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, relativeRangeFunction)
+			localVariables["."].typ = typ
+
+			if localVariables["$"] == nil {
+				continue
+			}
+
+			localVariables["$"].rng = localVariables["."].rng
+			localVariables["$"].typ = localVariables["."].typ
 
 		default:
 			continue
 		}
 	}
 
-	// TODO: is this one necessary. I think I do it the same thing above
-	/*
-		for _, def := range info.Defs {
-			log.Println("def = ", def)
-
-			if def == nil {
-				continue
-			}
-
-			if def.Name() == "Input" {
-				structType, ok := def.Type().Underlying().(*types.Struct)
-
-				if !ok {
-					continue
-				}
-
-				varDef := NewVariableDefinition(def.Name(), comment, file.Name)
-				varDef.Type = structType
-
-				commentType[0] = structType
-
-				file.ScopeToVariables[parentScope] = append(file.ScopeToVariables[parentScope], varDef)
-
-				continue
-			}
-
-			log.Println("reflect def type = ", reflect.TypeOf(def.Type()))
-
-			l, ok := def.Type().(*types.Signature)
-
-			if !ok {
-				continue
-			}
-
-			log.Println("isMethod = ", l.Recv())
-			if l.Recv() != nil {
-				continue
-			}
-
-			function := &FunctionDefinition{}
-			function.Node = comment
-			function.Name = def.Name()
-			function.FileName = file.Name
-			function.Type = l
-
-			// posn := fileSet.Position(def.Pos())
-			// function.Range =
-
-			startPos := fileSet.Position(def.Pos())
-			endPos := fileSet.Position(def.Pos())
-			endPos.Column += endPos.Offset
-
-			distance := goAstPositionToRange(startPos, endPos)
-			function.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, distance)
-
-			file.Functions[function.Name] = function
-
-			log.Printf("go:code fun alt :: fn = %s ::: range = %s", function.Name, function.Range)
-		}
-
-	*/
-
 	errs := convertThirdPartiesParseErrorToLocalError(err, errsType, file, comment, virtualHeader)
+	errs = append(errs, errComments...)
 
 	return commentType, errs
 }
@@ -809,7 +1013,7 @@ func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode,
 		panic("'variable declaration' cannot be parentless, it shoud be contain in at least 1 one scope")
 	}
 
-	if node.Kind != parser.KIND_VARIABLE_DECLARATION {
+	if node.Kind() != parser.KIND_VARIABLE_DECLARATION {
 		panic("found value mismatch for 'VariableDeclarationNode.Kind' during DefinitionAnalysis()")
 	}
 
@@ -835,14 +1039,14 @@ func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode,
 		errs = append(errs, localErrs...)
 	} else {
 		localErr := parser.NewParseError(&lexer.Token{}, errors.New("assignment expression cannot be empty"))
-		localErr.Range = node.Range
+		localErr.Range = node.Range()
 		errs = append(errs, localErr)
 	}
 
 	// 1. Check at least var is declared
 	variableSize := len(node.VariableNames)
 	if variableSize == 0 {
-		errLocal := parser.ParseError{Err: errors.New("variable name is empty for the declaration"), Range: node.Range}
+		errLocal := parser.ParseError{Err: errors.New("variable name is empty for the declaration"), Range: node.Range()}
 		errs = append(errs, errLocal)
 
 		return invalidTypes, errs
@@ -877,7 +1081,7 @@ func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode,
 		}
 
 		// 2. Insert definition into dictionary, since there is no error whether the variable is already declared or not
-		def := NewVariableDefinition(key, node, file.Name)
+		def := NewVariableDefinition(key, node, file.Name())
 
 		// def := &VariableDefinition{}
 		// def.Node = node
@@ -887,15 +1091,15 @@ func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode,
 
 		// TODO: Double variable declaration only work with "range" keyword,
 		// so later take it into consideration
-		def.Type = expressionType[count] // TODO: this code is so wrong
+		def.typ = expressionType[count] // TODO: this code is so wrong
 
 		// def.FileName = file.Name
 		// def.IsValid = true
 
-		def.Range = variable.Range
-		def.Range.End = parentScope.Range.End
+		def.rng.Start = variable.Range.Start
+		// def.rng.End = parentScope.Range().End
 
-		file.ScopeToVariables[parentScope] = append(file.ScopeToVariables[parentScope], def)
+		// file.scopeToVariables[parentScope] = append(file.scopeToVariables[parentScope], def)
 
 		localVariables[key] = def
 	}
@@ -904,7 +1108,7 @@ func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode,
 }
 
 func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
-	if node.Kind != parser.KIND_VARIABLE_ASSIGNMENT {
+	if node.Kind() != parser.KIND_VARIABLE_ASSIGNMENT {
 		panic("found value mismatch for 'VariableAssignationNode.Kind' during DefinitionAnalysis()\n" + node.String())
 	}
 
@@ -925,7 +1129,7 @@ func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, 
 	// 0. Check that 'expression' is valid
 	if node.Value == nil {
 		errLocal := parser.NewParseError(nil, errors.New("assignment value cannot be empty"))
-		errLocal.Range = node.Range
+		errLocal.Range = node.Range()
 		errs = append(errs, errLocal)
 
 		return invalidTypes, errs
@@ -937,8 +1141,8 @@ func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, 
 	// 1. Check at least var is declared
 	if node.VariableName == nil {
 		err := fmt.Errorf("%w. syntax should be 'variable = value'", errEmptyVariableName)
-		errLocal := parser.ParseError{Err: err, Range: node.Range}
-		errLocal.Range = node.Range
+		errLocal := parser.ParseError{Err: err, Range: node.Range()}
+		errLocal.Range = node.Range()
 
 		errs = append(errs, errLocal)
 		return expressionType, errs
@@ -970,22 +1174,22 @@ func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, 
 		return invalidTypes, errs
 	}
 
-	if !types.Identical(def.Type, expressionType[0]) {
-		errMsg := fmt.Errorf("%w, between var '%s' and expr '%s'", errTypeMismatch, def.Type, expressionType[0])
+	if !types.Identical(def.typ, expressionType[0]) {
+		errMsg := fmt.Errorf("%w, between var '%s' and expr '%s'", errTypeMismatch, def.Type(), expressionType[0])
 		err := parser.NewParseError(node.VariableName, errMsg)
 		errs = append(errs, err)
 
 		return invalidTypes, errs
 	}
 
-	assignmentType[0] = def.Type
+	assignmentType[0] = def.typ
 	assignmentType[1] = expressionType[1]
 
 	return assignmentType, errs
 }
 
 func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
-	if node.Kind != parser.KIND_MULTI_EXPRESSION {
+	if node.Kind() != parser.KIND_MULTI_EXPRESSION {
 		panic("found value mismatch for 'MultiExpressionNode.Kind' during DefinitionAnalysis()\n" + node.String())
 	}
 
@@ -1014,22 +1218,22 @@ func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent 
 		// create a token group and insert it to the end of the expression
 		groupName := "$__TMP_GROUP"
 
-		tokenGroup := &lexer.Token{ID: lexer.GROUP, Value: []byte(groupName), Range: expression.Range}
+		tokenGroup := &lexer.Token{ID: lexer.GROUP, Value: []byte(groupName), Range: expression.Range()}
 		expression.Symbols = append(expression.Symbols, tokenGroup)
 
 		// TODO: Introduce the concept of reserved variable name
 		// In my case, variable that start with "$__" are reserved for parser internal use
 
 		// then insert that token as variable within the file
-		def := NewVariableDefinition(groupName, nil, file.Name)
-		def.Range = tokenGroup.Range
+		def := NewVariableDefinition(groupName, nil, file.Name())
+		def.rng = tokenGroup.Range
 		def.IsValid = true
 
-		def.Type = expressionType[0]
+		def.typ = expressionType[0]
 		// TODO: bring back enumeration to this file, other file is deprecated
 
 		// file.ScopeToVariables[parent] = append(file.ScopeToVariables[parent], def)
-		localVariables[def.Name] = def
+		localVariables[def.Name()] = def
 
 		expressionType, localErrs = definitionAnalysisExpression(expression, parent, file, globalVariables, localVariables)
 		errs = append(errs, localErrs...)
@@ -1043,7 +1247,7 @@ func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent 
 		// size = len(file.ScopeToVariables[parent])
 		// defToRemove := file.ScopeToVariables[parent][size - 1]
 
-		delete(localVariables, def.Name)
+		delete(localVariables, def.Name())
 		// file.ScopeToVariables[parent] = file.ScopeToVariables[parent][:size - 1] // this is not good, nothing garanty that 'def' will this be at the end. look for it propertly
 
 		// never forget about this one
@@ -1053,8 +1257,8 @@ func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent 
 	return expressionType, errs
 }
 
-func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
-	if node.Kind != parser.KIND_EXPRESSION {
+func definitionAnalysisExpression(node *parser.ExpressionNode, _ *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+	if node.Kind() != parser.KIND_EXPRESSION {
 		panic("found value mismatch for 'ExpressionNode.Kind'. expected 'KIND_EXPRESSION' instead. current node \n" + node.String())
 	}
 
@@ -1068,7 +1272,7 @@ func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.Gr
 
 	if len(node.Symbols) == 0 {
 		err := parser.NewParseError(nil, errEmptyExpression)
-		err.Range = node.Range
+		err.Range = node.Range()
 		errs = append(errs, err)
 
 		return expressionType, errs
@@ -1078,7 +1282,7 @@ func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.Gr
 	// New area
 	// ------------
 
-	defChecker := NewDefinitionAnalyzer(node.Symbols, file, node.Range)
+	defChecker := NewDefinitionAnalyzer(node.Symbols, file, node.Range())
 	expressionType, errs = defChecker.makeSymboleDefinitionAnalysis(localVariables, globalVariables)
 
 	return expressionType, errs
@@ -1187,13 +1391,13 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 		case lexer.FUNCTION:
 
 			functionName := string(symbol.Value)
-			def := p.file.Functions[functionName]
+			def := p.file.functions[functionName]
 
 			if def == nil {
 				err = parser.NewParseError(symbol, errFunctionUndefined)
 				errs = append(errs, err)
 			} else {
-				symbolType = def.Type
+				symbolType = def.typ
 				listOfUsedFunctions[functionName] = def
 			}
 
@@ -1493,7 +1697,7 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 
 	// TODO: Make sure that 'varDef.Name == fields[0]'
 
-	parentType := varDef.Type
+	parentType := varDef.typ
 	if parentType == nil {
 		return TYPE_ANY.Type(), nil
 	} else if types.Identical(parentType, TYPE_ANY.Type()) {
@@ -1783,7 +1987,7 @@ func makeFunctionTypeInference(funcType *types.Signature, funcSymbol *lexer.Toke
 				variable.Value = append([]byte(varName), variable.Value[length:]...)
 
 				varDef := NewVariableDefinition(varName, nil, fakeFileName)
-				varDef.Type = rootVariableType // new variable type (for the root only)
+				varDef.typ = rootVariableType // new variable type (for the root only)
 
 				typ, err := getTypeOfDollarVariableWithinFile(variable, varDef)
 				if err != nil {
@@ -1814,7 +2018,7 @@ func makeFunctionTypeInference(funcType *types.Signature, funcSymbol *lexer.Toke
 		}
 
 		if !types.Identical(paramType, argumentType) {
-			errMsg := fmt.Errorf("%w between param '%s' and arg '%s'", errTypeMismatch, paramType, argumentType)
+			errMsg := fmt.Errorf("%w, expected '%s' but got '%s'", errTypeMismatch, paramType, argumentType)
 			err := parser.NewParseError(argSymbols[i], errMsg)
 
 			return invalidReturnType, nil, err
@@ -1943,7 +2147,7 @@ func setVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token, sy
 		return
 	}
 
-	if !types.Identical(varDef.Type, TYPE_ANY.Type()) {
+	if !types.Identical(varDef.typ, TYPE_ANY.Type()) {
 		return
 	}
 
@@ -1974,13 +2178,14 @@ func setVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token, sy
 	varDef.ImplicitType[variablePath] = symbolType
 }
 
+// Will only guess if variable type is 'any', otherwise return the current type of the variable
 func guessVariableTypeFromImplicitType(varDef *VariableDefinition) types.Type {
 	if varDef == nil {
 		return types.Typ[types.Invalid]
 	}
 
-	if !types.Identical(varDef.Type, TYPE_ANY.Type()) {
-		return TYPE_ANY.Type()
+	if !types.Identical(varDef.typ, TYPE_ANY.Type()) {
+		return varDef.typ
 	}
 
 	// reach here only if variable of type 'any'
@@ -2208,8 +2413,10 @@ func remapRangeFromCommentGoCodeToSource(header string, boundary, target lexer.R
 	if rangeRemaped.End.Line > boundary.End.Line {
 		msg := "boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n"
 		log.Printf(msg, boundary.End.Line, rangeRemaped.End.Line)
+		log.Printf("boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n", boundary.End.Line, rangeRemaped.End.Line)
 
-		panic("remaped range cannot excede the comment GoCode boundary")
+		rangeRemaped.End.Line = boundary.End.Line
+		// panic("remaped range cannot excede the comment GoCode boundary")
 	}
 
 	return rangeRemaped
@@ -2228,6 +2435,27 @@ func goAstPositionToRange(startPos, endPos token.Position) lexer.Range {
 	}
 
 	return distance
+}
+
+func NewParseErrorFromErrorType(err types.Error) *parser.ParseError {
+	fset := err.Fset
+	pos := fset.Position(err.Pos)
+
+	parseErr := parser.ParseError{
+		Err: errors.New(err.Msg),
+		Range: lexer.Range{
+			Start: lexer.Position{
+				Line:      pos.Line,
+				Character: pos.Column,
+			},
+			End: lexer.Position{
+				Line:      pos.Line,
+				Character: pos.Column + pos.Offset - 1,
+			},
+		},
+	}
+
+	return &parseErr
 }
 
 func NewParseErrorFromErrorList(err *scanner.Error, randomColumnOffset int) *parser.ParseError {
@@ -2282,65 +2510,19 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 		for _, errScanner := range errorList {
 			// A. Build diagnostic errors
 			parseErr := NewParseErrorFromErrorList(errScanner, randomColumnOffset)
-			// WIP
-			// parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
 			parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, parseErr.Range)
+
 			log.Println("comment scanner error :: ", parseErr)
 
 			errs = append(errs, parseErr)
-
-			// TODO: this for loop must should be removed in the future
-			// B. Tag the functions that are erroneous
-			for _, function := range file.Functions {
-				if function == nil {
-					log.Printf("nil function inserted into file definition\n FileDefinition = %#v\n", file)
-					panic("nil function inserted into FileDefinition")
-				}
-
-				errorLine := parseErr.Range.Start.Line
-				errorColumn := parseErr.Range.Start.Character
-
-				if function.Range.Start.Line > errorLine {
-					continue
-				}
-
-				if function.Range.End.Line < errorLine {
-					continue
-				}
-
-				if function.Range.Start.Character > errorColumn {
-					continue
-				}
-			}
 		}
 	}
 
 	// 2. convert type error to lexer.Error
 
 	for _, err := range errsType {
-		fset := err.Fset
-		pos := fset.Position(err.Pos)
-
-		parseErr := parser.ParseError{
-			Err: errors.New(err.Msg),
-			Range: lexer.Range{
-				Start: lexer.Position{
-					Line:      pos.Line,
-					Character: pos.Column,
-				},
-				End: lexer.Position{
-					Line:      pos.Line,
-					Character: pos.Column + pos.Offset - 1,
-				},
-			},
-		}
-
-		// WIP
-		// parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.Range, parseErr.Range)
+		parseErr := NewParseErrorFromErrorType(err)
 		parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, parseErr.Range)
-
-		log.Println("==> 1122")
-		log.Printf("%s\n ==> rangeError : %s\n", comment, parseErr.Range)
 
 		errs = append(errs, parseErr)
 	}
@@ -2358,18 +2540,19 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 
 // TODO: rename to 'findTargetNodeInfo()',
 // TODO: not yet implemented, this code is buggy and not tested
+// TODO: to remove
 func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parser.AstNode, name string, isTemplate bool) {
 	if root == nil {
 		return nil, "", false
 	}
 
-	if !root.GetRange().Contains(position) {
+	if !root.Range().Contains(position) {
 		return nil, "", false
 	}
 
 	switch r := root.(type) {
 	case *parser.GroupStatementNode:
-		if r.ControlFlow.GetRange().Contains(position) {
+		if r.ControlFlow.Range().Contains(position) {
 
 			node, name, isTemplate = findLeadWithinAst(r.ControlFlow, position)
 			if _, ok := node.(*parser.GroupStatementNode); !ok {
@@ -2380,7 +2563,7 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 		}
 
 		for _, statement := range r.Statements {
-			if !statement.GetRange().Contains(position) {
+			if !statement.Range().Contains(position) {
 				continue
 			}
 
@@ -2394,7 +2577,7 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 
 		return nil, "", false
 	case *parser.TemplateStatementNode:
-		if r.Kind == parser.KIND_DEFINE_TEMPLATE || r.Kind == parser.KIND_BLOCK_TEMPLATE {
+		if r.Kind() == parser.KIND_DEFINE_TEMPLATE || r.Kind() == parser.KIND_BLOCK_TEMPLATE {
 			return nil, "", false
 		}
 
@@ -2410,7 +2593,7 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 			return nil, "", false
 		}
 
-		if r.Expression.GetRange().Contains(position) {
+		if r.Expression.Range().Contains(position) {
 			return findLeadWithinAst(r.Expression, position)
 		}
 
@@ -2425,7 +2608,7 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 			return r, string(variable.Value), false
 		}
 
-		if r.Value.GetRange().Contains(position) {
+		if r.Value.Range().Contains(position) {
 			return findLeadWithinAst(r.Value, position)
 		}
 
@@ -2435,14 +2618,14 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 			return r, string(r.VariableName.Value), false
 		}
 
-		if r.Value.GetRange().Contains(position) {
+		if r.Value.Range().Contains(position) {
 			return findLeadWithinAst(r.Value, position)
 		}
 
 		return nil, "", false
 	case *parser.MultiExpressionNode:
 		for _, expression := range r.Expressions {
-			if !expression.GetRange().Contains(position) {
+			if !expression.Range().Contains(position) {
 				continue
 			}
 
@@ -2467,6 +2650,130 @@ func findLeadWithinAst(root parser.AstNode, position lexer.Position) (node parse
 	}
 }
 
+// NodeDefinition interface{} = FileDefinition(?) | VariableDefinition | TemplateDefinition | FunctionDefinition
+func FindSourceDefinitionFromPosition(file *FileDefinition, position lexer.Position) []NodeDefinition {
+	// 1. Find the node and token corresponding to the provided position
+	seeker := &findAstNodeRelatedToPosition{Position: position}
+
+	log.Println("position before walker: ", position)
+	parser.Walk(seeker, file.root)
+	log.Printf("seeker after walker : %#v\n", seeker)
+
+	if seeker.TokenFound == nil {
+		// No definition found
+		return nil
+	}
+
+	// 2. From the node and token found, find the appropriate 'Source Definition'
+	name := string(seeker.TokenFound.Value)
+
+	if seeker.IsTemplate {
+		log.Println("--> 4422 file.templates available:")
+		for templateName, template := range file.templates {
+			log.Printf("---> templateName = %s :::: template = %#v\n", templateName, template)
+		}
+
+		// TODO:
+		// WIP
+		// Find in all workspace, instead of just related to file
+		// because template name with multiple definition throughout the workspace
+		// cannot be computed with the all method eg. def.FileName == "" && def.Type == anyType
+
+		// OLD VERSION
+		/*
+			templateDef := file.templates[name]
+			if templateDef == nil {
+				// return nil, seeker.TokenFound, seeker.NodeFound
+				return nil
+			}
+		*/
+
+		// NEW VERSION
+		var allTemplateDefs []NodeDefinition = nil
+		templateManager := TEMPLATE_MANAGER
+
+		for templateScope, def := range templateManager.TemplateScopeToDefinition {
+			if name == templateScope.TemplateName() {
+				allTemplateDefs = append(allTemplateDefs, def)
+			}
+		}
+
+		return allTemplateDefs
+
+	} else if seeker.IsVariable {
+
+		const MAX_LOOP_REPETITION int = 20
+		var count int = 0
+
+		parentScope := seeker.LastParent
+
+		// Bubble up until you find the scope where the variable is defined
+		for parentScope != nil {
+			count++
+			if count > MAX_LOOP_REPETITION {
+				panic("possible infinite loop detected while processing 'goToDefinition()'")
+			}
+
+			scopedVariables := file.GetScopedVariables(parentScope)
+
+			variableDef, ok := scopedVariables[name]
+			if ok {
+				singleDefinition := make([]NodeDefinition, 1)
+				singleDefinition[0] = variableDef
+
+				return singleDefinition
+			}
+
+			parentScope = parentScope.Parent()
+		}
+
+		return nil
+
+	} else if seeker.IsExpression {
+		// Either check the token is a 'function' or a 'variable'
+		// There is no in-between
+
+		// A. function check
+		functionDef := file.functions[name]
+		if functionDef != nil {
+			singleDefinition := make([]NodeDefinition, 1)
+			singleDefinition[0] = functionDef
+
+			return singleDefinition
+		}
+
+		// B. otherwise variable check
+		const MAX_LOOP_REPETITION int = 20
+		var count int = 0
+
+		parentScope := seeker.LastParent
+
+		// Bubble up until you find the scope where the variable is defined
+		for parentScope != nil {
+			count++
+			if count > MAX_LOOP_REPETITION {
+				panic("possible infinite loop detected while processing 'goToDefinition()'")
+			}
+
+			scopedVariables := file.GetScopedVariables(parentScope)
+
+			variableDef, ok := scopedVariables[name]
+			if ok {
+				singleDefinition := make([]NodeDefinition, 1)
+				singleDefinition[0] = variableDef
+
+				return singleDefinition
+			}
+
+			parentScope = parentScope.Parent()
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
 func FindAstNodeRelatedToPosition(root *parser.GroupStatementNode, position lexer.Position) (*lexer.Token, parser.AstNode, *parser.GroupStatementNode, bool) {
 	seeker := &findAstNodeRelatedToPosition{Position: position}
 
@@ -2478,11 +2785,13 @@ func FindAstNodeRelatedToPosition(root *parser.GroupStatementNode, position lexe
 }
 
 type findAstNodeRelatedToPosition struct {
-	Position   lexer.Position
-	TokenFound *lexer.Token
-	LastParent *parser.GroupStatementNode
-	NodeFound  parser.AstNode // nodeStatement
-	IsTemplate bool
+	Position     lexer.Position
+	TokenFound   *lexer.Token
+	LastParent   *parser.GroupStatementNode
+	NodeFound    parser.AstNode // nodeStatement
+	IsTemplate   bool
+	IsVariable   bool
+	IsExpression bool
 }
 
 func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor {
@@ -2497,8 +2806,8 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 		return nil
 	}
 
-	if !node.GetRange().Contains(v.Position) {
-		log.Println("NOPE, POSITION OUT OF RANGE, GO ELSEWHERE. nodeRange = ", node.GetRange())
+	if !node.Range().Contains(v.Position) {
+		log.Println("NOPE, POSITION OUT OF RANGE, GO ELSEWHERE. nodeRange = ", node.Range())
 		return nil
 	}
 
@@ -2522,7 +2831,7 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 		if n.VariableName.Range.Contains(v.Position) {
 			v.TokenFound = n.VariableName
 			v.NodeFound = n
-			v.IsTemplate = false
+			v.IsVariable = true
 
 			return nil
 		}
@@ -2535,7 +2844,7 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 			if variable.Range.Contains(v.Position) {
 				v.TokenFound = variable
 				v.NodeFound = n
-				v.IsTemplate = false
+				v.IsVariable = true
 
 				return nil
 			}
@@ -2546,10 +2855,12 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 		return v
 	case *parser.MultiExpressionNode:
 		for _, expression := range n.Expressions {
-			if expression.Range.Contains(v.Position) {
-				if v.NodeFound == nil {
-					v.NodeFound = n
-				}
+			if expression.Range().Contains(v.Position) {
+				/*
+					if v.NodeFound == nil {
+						v.NodeFound = n
+					}
+				*/
 
 				return v
 			}
@@ -2560,7 +2871,7 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 		for _, symbol := range n.Symbols {
 			if symbol.Range.Contains(v.Position) {
 				v.TokenFound = symbol
-				v.IsTemplate = false
+				v.IsExpression = true
 
 				if v.NodeFound == nil {
 					v.NodeFound = n
@@ -2590,28 +2901,25 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 	if isTemplate {
 		name := string(from.Value)
 		// templateFound := file.GetSingleTemplateDefinitionByName(name)
-		templateFound := file.Templates[name]
+		templateFound := file.templates[name]
 
 		if templateFound == nil {
-			return file.Name, nil, lexer.Range{}
+			return file.Name(), nil, lexer.Range{}
 		}
 
-		if templateFound.FileName == "" {
-			return file.Name, nil, lexer.Range{}
+		if templateFound.fileName == "" {
+			return file.Name(), nil, lexer.Range{}
 		}
 
-		return templateFound.FileName, templateFound.Node, templateFound.Range
+		return templateFound.fileName, templateFound.Node(), templateFound.Range()
 	}
 
 	name := string(from.Value)
 
 	// 2. Try to find the function
-	functionFound := file.Functions[name]
+	functionFound := file.functions[name]
 	if functionFound != nil {
-		log.Println("---> 7788")
-		log.Printf("function -- name = %s :: range = %s\n", functionFound.Name, functionFound.Range.String())
-
-		return functionFound.FileName, functionFound.Node, functionFound.Range
+		return functionFound.fileName, functionFound.Node(), functionFound.Range()
 	}
 
 	// 3. Found the multi-scope varialbe
@@ -2629,14 +2937,59 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 
 		variableFound, ok := scopedVariables[name]
 		if ok {
-			return variableFound.FileName, variableFound.Node, variableFound.Range
+			return variableFound.fileName, variableFound.Node(), variableFound.Range()
 		}
 
 		parentScope = parentScope.Parent()
 	}
 
-	return file.Name, nil, lexer.Range{}
+	return file.Name(), nil, lexer.Range{}
 }
+
+func Hover(definition NodeDefinition) (string, *lexer.Range) {
+	if definition == nil {
+		panic("Hover() do not accept <nil> definition")
+	}
+
+	reach := definition.Range()
+	typeStringified := definition.TypeString()
+
+	typeStringified = "```go\n" + typeStringified + "\n```"
+
+	return typeStringified, &reach
+}
+
+/*
+func Hover(from *lexer.Token, parentNodeStatement parser.AstNode, parentScope *parser.GroupStatementNode, file *FileDefinition, isTemplate bool) (fileName string, defFound parser.AstNode, reach lexer.Range) {
+	// TODO: split those 3 check into function that return the corresponding definition : check for template, function and variable
+
+	// Check if Template (return type for '$' or '.')
+	if isTemplate {
+		templateName := string(from.Value)
+
+		templateDef := file.templates[templateName]
+		if templateDef == nil {
+			return "", nil
+		}
+
+		return templateDef.Name, templateDef.Type()
+	}
+
+	// Check if Function
+	// Check if Method
+	//
+	// Check if Variable
+	// Check if Property
+	//
+
+	// return tokenName, tokenType
+	// return token, tokenType ???
+	// return tokenName, tokenType, err ???
+	// return tokenName, tokenType, varType(func, var, template) ???
+
+	panic("not implemented yet")
+}
+*/
 
 /*
 func reverseFindDefinitionWithinFile(leave *parser.GroupStatementNode, nameToFind string, isTemplate bool) (foundNode parser.AstNode, reach lexer.Range) {

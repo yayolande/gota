@@ -8,6 +8,7 @@
 {{ $ := "12" }}
 {{ . := 12 }}
 {{ . = 12 }}
+{{ . }}
 
 {{ dell }}
 {{ diction }}
@@ -35,8 +36,7 @@
 {{ $var }}
 {{ $ := "elton" }}  // this one right here should be a big no-no, redefining $ is not good (analysis) although it is valid syntax
 {{ $. := "elton" }}  should through an error as well (bad syntax)
-{{ $.angolmoi }}		// should not through an error if '$' stills refer to initial input (only linting error is possible, not syntax error)
-{{ $.ban }}
+{{ $.angolmoi }}		// should not through an error if '$' stills refer to initial input (only linting error is possible, not syntax error) {{ $.ban }}
 {{ $.planet := "elton" }}	// must through an error 
 {{ $.planet = "elton" }}	// must through an error because of the assignment
 {{ .planet = "hello" }}		// must through an error
@@ -58,7 +58,25 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 {{ $val := "the storm" }}
 {{ . }}
 
+{{ template "rickus" . }}
+
 {{ define "rickus" }}
+	{{/* go:code
+
+	type Input struct {
+		name string
+		age int
+		dd
+	}
+
+	func mortal() string
+	func () 
+
+	func mikey()
+
+
+	*/}}
+
 	{{ $val := "calco" }}
 	{{ $val }}
 	{{ $ }}
@@ -74,8 +92,22 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 
 {{ define "tonton" .Pal }}
 	{{ define "uncle" }}
+		{{/* go:code type Input struct { city string } */}}
 	{{ end }}
 {{ end }}
+
+{{ define "benso" }}
+	{{ define "aunt" }}
+	{{ end }}
+	{{ $ }}
+	{{ $ = 34 }}
+	{{ $ = 34 }}
+{{ end }}
+
+{{ template "uncle" . }}
+{{ template "aunt" . }}
+{{ template "laptop" . }}
+
 
 {{ if ((true)) }}
 	{{ define "tata" }}
@@ -85,6 +117,9 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 
 {{ template "tonton" . }}
 {{ template "tata" . }}
+{{ dict "steveen" 23 }}
+{{ 23 | dict "steveen" }}
+{{ dict = "hell" }}
 
 {{/*s go:code func getName(name b) */}}
 
@@ -95,8 +130,6 @@ source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is v
 
 
 go:code     
-  
-func mistic(,
 
 var nam string
 
@@ -106,8 +139,12 @@ type Input struct {
 	City		string
 }
 
-   func halo(, )      
+func (i Input) banana() string
 func (i Input) GetName() string
+func (i *Input) SetName(string) int
+
+var melo int
+func halo(, )      
 func diction() 
 // func dict (string, a int) string
 func dict (string, int) (string, error)
@@ -120,5 +157,17 @@ var nanomachine func(name string, exp int) int
 
 */}}
 
+{{ template "meborne" . }}
+
+{{ $megan := "Meg" }}
+{{ }}
+
+
+
+{{ $megan }}
+
+
+{{ dict }}
+{{ diction }}
 {{ nanomachine }}
 

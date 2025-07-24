@@ -1,0 +1,38 @@
+
+{{ $ }}
+{{ . }}
+{{ $.name }}
+{{ $.age }}
+{{ $.cigale }}
+{{ magic $.name $.age }}
+{{ magic $.age $.age }}
+
+{{ diction }}
+{{ martinelli }}
+
+{{ template "name" . }}
+
+{{/* go:code
+	type Input struct {
+		name	string
+		city string
+		age	int
+	}
+
+	func martinelli() string
+	func magic(name string, age int) string
+*/}}
+
+{{ $ }}
+{{ template "meborne" . }}
+
+{{ template "ee" . }}
+
+
+{{ define "alal" }}
+	{{ template "meborne" . }}
+{{ end }}
+
+{{ define "meborne" }}
+	{{ template "laptop" . }}
+{{ end }}

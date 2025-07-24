@@ -4,6 +4,7 @@
 <div class="flex-list">
 	{{range .Repos}}
 				{{template "repo/icon" .}}
+
 						{{if and (or $.PageIsExplore $.PageIsProfileStarList) .Owner}}
 						<a class="text primary name" href="{{.Owner.HomeLink}}">{{.Owner.Name}}</a>/
 						{{end}}

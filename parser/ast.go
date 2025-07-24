@@ -13,8 +13,8 @@ type SymbolDefinition map[string]AstNode
 //go:generate go run ./generate.go
 type AstNode interface {
 	String() string
-	GetKind() Kind
-	GetRange() lexer.Range
+	Kind() Kind
+	Range() lexer.Range
 	SetKind(val Kind)
 	DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error
 	// typeAnalysis()
@@ -24,22 +24,22 @@ type AstNode interface {
 type Kind int
 
 type VariableDeclarationNode struct {
-	Kind          Kind
-	Range         lexer.Range
+	kind          Kind
+	rng           lexer.Range
 	VariableNames []*lexer.Token
 	Value         *MultiExpressionNode
 }
 
-func (v VariableDeclarationNode) GetKind() Kind {
-	return v.Kind
+func (v VariableDeclarationNode) Kind() Kind {
+	return v.kind
 }
 
-func (v VariableDeclarationNode) GetRange() lexer.Range {
-	return v.Range
+func (v VariableDeclarationNode) Range() lexer.Range {
+	return v.rng
 }
 
 func (v *VariableDeclarationNode) SetKind(val Kind) {
-	v.Kind = val
+	v.kind = val
 }
 
 func (v VariableDeclarationNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
@@ -47,23 +47,23 @@ func (v VariableDeclarationNode) DefinitionAnalysis(globalVariables, localVariab
 }
 
 type VariableAssignationNode struct {
-	Kind         Kind
-	Range        lexer.Range
+	kind         Kind
+	rng          lexer.Range
 	VariableName *lexer.Token
 	// Value	AstNode	// of type expression
 	Value *MultiExpressionNode // of type expression
 }
 
-func (v VariableAssignationNode) GetKind() Kind {
-	return v.Kind
+func (v VariableAssignationNode) Kind() Kind {
+	return v.kind
 }
 
-func (v VariableAssignationNode) GetRange() lexer.Range {
-	return v.Range
+func (v VariableAssignationNode) Range() lexer.Range {
+	return v.rng
 }
 
 func (v *VariableAssignationNode) SetKind(val Kind) {
-	v.Kind = val
+	v.kind = val
 }
 
 func (v VariableAssignationNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
@@ -71,21 +71,21 @@ func (v VariableAssignationNode) DefinitionAnalysis(globalVariables, localVariab
 }
 
 type MultiExpressionNode struct {
-	Kind
-	Range       lexer.Range
+	kind        Kind
+	rng         lexer.Range
 	Expressions []*ExpressionNode
 }
 
-func (m MultiExpressionNode) GetKind() Kind {
-	return m.Kind
+func (m MultiExpressionNode) Kind() Kind {
+	return m.kind
 }
 
-func (m MultiExpressionNode) GetRange() lexer.Range {
-	return m.Range
+func (m MultiExpressionNode) Range() lexer.Range {
+	return m.rng
 }
 
 func (m *MultiExpressionNode) SetKind(val Kind) {
-	m.Kind = val
+	m.kind = val
 }
 
 func (v *MultiExpressionNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
@@ -93,21 +93,21 @@ func (v *MultiExpressionNode) DefinitionAnalysis(globalVariables, localVariables
 }
 
 type ExpressionNode struct {
-	Kind
-	Range   lexer.Range
+	kind    Kind
+	rng     lexer.Range
 	Symbols []*lexer.Token
 }
 
-func (v ExpressionNode) GetKind() Kind {
-	return v.Kind
+func (v ExpressionNode) Kind() Kind {
+	return v.kind
 }
 
-func (v ExpressionNode) GetRange() lexer.Range {
-	return v.Range
+func (v ExpressionNode) Range() lexer.Range {
+	return v.rng
 }
 
 func (v *ExpressionNode) SetKind(val Kind) {
-	v.Kind = val
+	v.kind = val
 }
 
 func (v ExpressionNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
@@ -115,23 +115,23 @@ func (v ExpressionNode) DefinitionAnalysis(globalVariables, localVariables, func
 }
 
 type TemplateStatementNode struct {
-	Kind
-	Range        lexer.Range
+	kind         Kind
+	rng          lexer.Range
 	TemplateName *lexer.Token
 	Expression   AstNode
 	parent       *GroupStatementNode
 }
 
-func (t TemplateStatementNode) GetKind() Kind {
-	return t.Kind
+func (t TemplateStatementNode) Kind() Kind {
+	return t.kind
 }
 
 func (t *TemplateStatementNode) SetKind(val Kind) {
-	t.Kind = val
+	t.kind = val
 }
 
-func (t TemplateStatementNode) GetRange() lexer.Range {
-	return t.Range
+func (t TemplateStatementNode) Range() lexer.Range {
+	return t.rng
 }
 
 func (t TemplateStatementNode) Parent() *GroupStatementNode {
@@ -147,16 +147,17 @@ type groupStatementShortcut struct {
 
 	VariableDeclarations map[string]*VariableDeclarationNode
 
-	TemplateDefined  map[string]*GroupStatementNode
-	TemplateCallUsed map[string]*TemplateStatementNode
+	TemplateDefined map[string]*GroupStatementNode
+	// TemplateCallUsed map[string]*TemplateStatementNode
+	TemplateCallUsed []*TemplateStatementNode
 	// TemplateCallUnresolved	map[string]*TemplateStatementNode
 	// TODO: remove this above 'TemplateCallUnresolved' and 'TemplateCallUsed'
 	// instead use 'TemplateCalls' to describe the union of both
 }
 
 type GroupStatementNode struct {
-	Kind
-	Range       lexer.Range
+	kind        Kind
+	rng         lexer.Range
 	parent      *GroupStatementNode // use 'isRoot' to check that the node is the ROOT
 	ControlFlow AstNode
 	Statements  []AstNode
@@ -167,28 +168,28 @@ type GroupStatementNode struct {
 
 func NewGroupStatementNode(kind Kind, reach lexer.Range) *GroupStatementNode {
 	scope := &GroupStatementNode{
-		Kind:   kind,
-		Range:  reach,
+		kind:   kind,
+		rng:    reach,
 		isRoot: false,
 	}
 
 	scope.ShortCut.TemplateDefined = make(map[string]*GroupStatementNode)
-	scope.ShortCut.TemplateCallUsed = make(map[string]*TemplateStatementNode)
+	scope.ShortCut.TemplateCallUsed = make([]*TemplateStatementNode, 0)
 	scope.ShortCut.VariableDeclarations = make(map[string]*VariableDeclarationNode)
 
 	return scope
 }
 
-func (g GroupStatementNode) GetKind() Kind {
-	return g.Kind
+func (g GroupStatementNode) Kind() Kind {
+	return g.kind
 }
 
-func (g GroupStatementNode) GetRange() lexer.Range {
-	return g.Range
+func (g GroupStatementNode) Range() lexer.Range {
+	return g.rng
 }
 
 func (g *GroupStatementNode) SetKind(val Kind) {
-	g.Kind = val
+	g.kind = val
 }
 
 func (g GroupStatementNode) Parent() *GroupStatementNode {
@@ -199,16 +200,29 @@ func (g GroupStatementNode) IsRoot() bool {
 	return g.isRoot
 }
 
-/*
-func (g *GroupStatementNode) SetRoot(val bool) {
-	g.isRoot = val
+func (g GroupStatementNode) TemplateNameToken() *lexer.Token {
+	if !g.IsTemplate() {
+		log.Printf("impossible to find the template name because the node in question is not a template definition\n group = %#v", g)
+		panic("impossible to find the template name because the node in question is not a template definition")
+	}
+
+	templateNode := g.ControlFlow.(*TemplateStatementNode)
+	if templateNode == nil {
+		log.Println("template contains structure, and expected a valid 'ControlFlow' but instead got <nil>\n group = ", g)
+		panic("template contains structure, and expected a valid 'ControlFlow' but instead got <nil>")
+	}
+
+	return templateNode.TemplateName
 }
-*/
+
+func (g GroupStatementNode) TemplateName() string {
+	return string(g.TemplateNameToken().Value)
+}
 
 func (g GroupStatementNode) IsTemplate() bool {
 	ok := false
-	ok = ok || g.Kind == KIND_DEFINE_TEMPLATE
-	ok = ok || g.Kind == KIND_BLOCK_TEMPLATE
+	ok = ok || g.kind == KIND_DEFINE_TEMPLATE
+	ok = ok || g.kind == KIND_BLOCK_TEMPLATE
 
 	if !ok {
 		return false
@@ -233,29 +247,71 @@ func (g GroupStatementNode) IsTemplate() bool {
 	return true
 }
 
+func (g GroupStatementNode) IsGroupWithControlFlow() bool {
+	switch g.kind {
+	case KIND_IF, KIND_ELSE_IF, KIND_RANGE_LOOP, KIND_WITH,
+		KIND_ELSE_WITH, KIND_DEFINE_TEMPLATE, KIND_BLOCK_TEMPLATE:
+
+		return true
+	}
+
+	return false
+}
+
+func (g GroupStatementNode) IsGroupWithNoVariableReset() bool {
+	switch g.kind {
+	case KIND_IF, KIND_ELSE, KIND_ELSE_IF, KIND_END:
+
+		return true
+	}
+
+	return false
+}
+
+func (g GroupStatementNode) IsGroupWithDotVariableReset() bool {
+
+	switch g.kind {
+	case KIND_RANGE_LOOP, KIND_WITH, KIND_ELSE_WITH:
+
+		return true
+	}
+
+	return false
+}
+
+func (g GroupStatementNode) IsGroupWithDollarDotVariableReset() bool {
+	switch g.kind {
+	case KIND_DEFINE_TEMPLATE, KIND_BLOCK_TEMPLATE, KIND_GROUP_STATEMENT:
+
+		return true
+	}
+
+	return false
+}
+
 func (v GroupStatementNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
 	panic("not useful anymore")
 }
 
 type CommentNode struct {
-	Kind
-	Range lexer.Range
+	kind  Kind
+	rng   lexer.Range
 	Value *lexer.Token
 	// GoCode			[]byte
 	GoCode *lexer.Token
 	// TODO: add those field for 'DefinitionAnalysis()'
 }
 
-func (c CommentNode) GetKind() Kind {
-	return c.Kind
+func (c CommentNode) Kind() Kind {
+	return c.kind
 }
 
-func (c CommentNode) GetRange() lexer.Range {
-	return c.Range
+func (c CommentNode) Range() lexer.Range {
+	return c.rng
 }
 
 func (v *CommentNode) SetKind(val Kind) {
-	v.Kind = val
+	v.kind = val
 }
 
 func (v CommentNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {

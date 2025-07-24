@@ -1,0 +1,131 @@
+{{ define "aa" }}
+
+	{{ template "bb" . }}
+{{ end }}
+
+{{ define "bb" }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+{{ end }}
+
+{{ define "cc" }}
+	{{ template "dd" . }}
+{{ end }}
+
+{{ define "dd" }}
+	{{ template "ee" . }}
+{{ end }}
+
+{{ define "ee" }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+	{{ template "cc" . }}
+{{ end }}
+
+{{ define "ff" }}
+	{{ template "cc" . }}
+{{ end }}
+
+{{ define "one" }}
+
+	{{ template "two" . }}
+	{{ template "two" . }}
+	{{ template "two" . }}
+	{{ template "two" . }}
+{{ end }}
+
+{{ define "two" }}
+	{{ template "two" . }}
+	{{ template "two" . }}
+	{{ template "one" . }}
+	{{ template "two" . }}
+	{{ template "one" . }}
+{{ end }}
+
+{{ define "meborne" }}
+
+	{{   }}
+
+	{{ template "one" . }}
+	{{ template "one" . }}
+	{{ template "two" . }}
+
+
+	{{ template "laptop" .}}
+	{{ template "laptop" .}}
+	{{ template "laptop" .}}
+
+	{{ }}
+	{{ $name }}
+
+
+	{{ $ }}
+
+	{{/* ssgo:code var name string */}}
+
+	{{/* 
+	go:code
+
+	var name string
+
+	type Input struct {
+		name string
+		age int
+		city string
+		status bool
+		salary int
+	}
+
+	func mello() int
+	func mortal() string
+	func()
+
+	func mikey()
+
+	*/}}
+
+	{{ mortal }}
+	{{ $val := "calco" }}
+	{{ $val }}
+	{{ $ }}
+	{{ mello }}
+	{{ . }}
+{{ end }}
+
+{{ template "meborne"  }}	// unfortunately 'Hover' Do not work, fix it !
+
+{{ template "meborne" . }}
+
+{{/* go:code
+
+var name string
+
+type Input struct {
+	surname string
+	salary int
+	profession string
+} 
+
+func melky() 
+
+func mortal() string
+func()
+
+func mikey()
+
+*/}}
+
+{{ $ }}
+{{ . }}
+{{ mortal }}
+{{ mello }}
+{{ melky }}

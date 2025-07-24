@@ -207,8 +207,8 @@ func TestGetTypeOfDollarVariableWithinFile(t *testing.T) {
 			}
 
 			varDef := &VariableDefinition{
-				Name: rootName,
-				Type: obj.Type(),
+				name: rootName,
+				typ:  obj.Type(),
 			}
 
 			// 1. here come the function to test

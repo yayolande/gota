@@ -13,8 +13,8 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 	}
 
 	type want struct {
-		stackDepth	int
-		isReplaceCurrentScope	bool
+		stackDepth            int
+		isReplaceCurrentScope bool
 	}
 
 	type datium struct {
@@ -27,7 +27,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		{
 			input: input{
 				// The type have no incidence on the grouping. Instead, everything is decided by 'statement.Kind'
-				statement: &GroupStatementNode{Kind: KIND_IF},	
+				statement: &GroupStatementNode{kind: KIND_IF},
 			},
 			want: want{
 				stackDepth: 2,
@@ -35,7 +35,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 		{
 			input: input{
-				statement: &MultiExpressionNode{Kind: KIND_MULTI_EXPRESSION},
+				statement: &MultiExpressionNode{kind: KIND_MULTI_EXPRESSION},
 			},
 			want: want{
 				stackDepth: 2,
@@ -43,16 +43,16 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 		{
 			input: input{
-				statement: &GroupStatementNode{Kind: KIND_ELSE},
+				statement: &GroupStatementNode{kind: KIND_ELSE},
 			},
 			want: want{
-				stackDepth: 2,
+				stackDepth:            2,
 				isReplaceCurrentScope: true,
 			},
 		},
 		{
 			input: input{
-				statement: &GroupStatementNode{Kind: KIND_END},
+				statement: &GroupStatementNode{kind: KIND_END},
 			},
 			want: want{
 				stackDepth: 1,
@@ -60,7 +60,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 		{
 			input: input{
-				statement: &VariableAssignationNode{Kind: KIND_VARIABLE_ASSIGNMENT},
+				statement: &VariableAssignationNode{kind: KIND_VARIABLE_ASSIGNMENT},
 			},
 			want: want{
 				stackDepth: 1,
@@ -68,7 +68,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 		{
 			input: input{
-				statement: &ExpressionNode{Kind: KIND_EXPRESSION},
+				statement: &ExpressionNode{kind: KIND_EXPRESSION},
 			},
 			want: want{
 				stackDepth: 1,
@@ -76,7 +76,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 		{
 			input: input{
-				statement: &GroupStatementNode{Kind: KIND_END},
+				statement: &GroupStatementNode{kind: KIND_END},
 			},
 			want: want{
 				stackDepth: 1,
@@ -84,7 +84,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		},
 	}
 
-	rootScope := &GroupStatementNode{Kind: KIND_GROUP_STATEMENT, isRoot: true}
+	rootScope := &GroupStatementNode{kind: KIND_GROUP_STATEMENT, isRoot: true}
 	initGroup := append([]*GroupStatementNode{}, rootScope)
 
 	parser := Parser{
@@ -121,7 +121,7 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 					continue
 				}
 
-				if scope != backupStack[count] && ! el.isReplaceCurrentScope {
+				if scope != backupStack[count] && !el.isReplaceCurrentScope {
 					t.Errorf("'openedNodeStack' changed between the last run. Particularly, scope at index '%d' is now different", count)
 				}
 			}
@@ -133,4 +133,3 @@ func TestSafeStatementGroupingDepth(t *testing.T) {
 		})
 	}
 }
-

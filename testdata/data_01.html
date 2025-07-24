@@ -12,5 +12,16 @@ steveen son {{ { necro { nello } beach }{ }}
 	*/
 
 
-{{ template "greg" "hh" }}
-jj
+{{ template "greg" . }}
+
+{{ define "laptop" }}
+	Hello new laptop
+
+	{{ $ }}
+	{{ . }}
+	{{ template "meborne" . }}
+	{{ template "" . }}
+	{{ template "uncle" . }}
+{{ end }}
+
+{{ define "laptop" }}

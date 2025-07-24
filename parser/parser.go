@@ -84,8 +84,9 @@ func appendStatementToScopeShortcut(scope *GroupStatementNode, statement AstNode
 
 	case *TemplateStatementNode:
 
-		templateName := string(stmt.TemplateName.Value)
-		scope.ShortCut.TemplateCallUsed[templateName] = stmt
+		// templateName := string(stmt.TemplateName.Value)
+		// scope.ShortCut.TemplateCallUsed[templateName] = stmt
+		scope.ShortCut.TemplateCallUsed = append(scope.ShortCut.TemplateCallUsed, stmt)
 
 	case *CommentNode:
 
@@ -170,7 +171,7 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 
 		newScope.parent = currentScope
 
-		switch newScope.GetKind() {
+		switch newScope.Kind() {
 		case KIND_IF, KIND_WITH, KIND_RANGE_LOOP, KIND_BLOCK_TEMPLATE, KIND_DEFINE_TEMPLATE:
 			// newScope.parent = getLastElement(p.openedNodeStack)
 			// currentScope := p.openedNodeStack[stackSize - 1]
@@ -183,7 +184,7 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 
 		case KIND_ELSE_IF:
 			if stackSize >= 2 {
-				switch currentScope.GetKind() {
+				switch currentScope.Kind() {
 				case KIND_IF, KIND_ELSE_IF: // Remove the last element from the stack and switch it with 'KIND_ELSE_IF' scope
 					parentScope := p.openedNodeStack[stackSize-2]
 
@@ -195,16 +196,16 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 
 					p.openedNodeStack = append(p.openedNodeStack, newScope)
 				default:
-					err = &ParseError{Range: currentScope.GetRange(),
-						Err: errors.New("'else if' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
+					err = &ParseError{Range: currentScope.Range(),
+						Err: errors.New("'else if' statement is not compatible with '" + currentScope.Kind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newScope.GetRange(),
-					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.Range(),
+					Err: errors.New("extraneous statement '" + newScope.Kind().String() + "'")}
 			}
 		case KIND_ELSE_WITH:
 			if stackSize >= 2 {
-				switch currentScope.GetKind() {
+				switch currentScope.Kind() {
 				case KIND_WITH, KIND_ELSE_WITH:
 					// Remove the last element from the stack and switch it with 'KIND_ELSE_WITH' scope
 					parentScope := p.openedNodeStack[stackSize-2]
@@ -217,16 +218,16 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 
 					p.openedNodeStack = append(p.openedNodeStack, newScope)
 				default:
-					err = &ParseError{Range: currentScope.GetRange(),
-						Err: errors.New("'else with' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
+					err = &ParseError{Range: currentScope.Range(),
+						Err: errors.New("'else with' statement is not compatible with '" + currentScope.Kind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newScope.GetRange(),
-					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.Range(),
+					Err: errors.New("extraneous statement '" + newScope.Kind().String() + "'")}
 			}
 		case KIND_ELSE:
 			if stackSize >= 2 {
-				switch currentScope.GetKind() {
+				switch currentScope.Kind() {
 				case KIND_IF, KIND_ELSE_IF, KIND_WITH, KIND_ELSE_WITH, KIND_RANGE_LOOP:
 					// Remove the last element from the stack and switch it with 'KIND_ELSE' scope
 					parentScope := p.openedNodeStack[stackSize-2]
@@ -240,18 +241,18 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 					p.openedNodeStack = append(p.openedNodeStack, newScope)
 
 				default:
-					err = &ParseError{Range: newScope.GetRange(),
-						Err: errors.New("'else' statement is not compatible with '" + currentScope.GetKind().String() + "'")}
+					err = &ParseError{Range: newScope.Range(),
+						Err: errors.New("'else' statement is not compatible with '" + currentScope.Kind().String() + "'")}
 				}
 			} else {
-				err = &ParseError{Range: newScope.GetRange(),
-					Err: errors.New("extraneous statement '" + newScope.GetKind().String() + "'")}
+				err = &ParseError{Range: newScope.Range(),
+					Err: errors.New("extraneous statement '" + newScope.Kind().String() + "'")}
 			}
 		case KIND_END:
 			if stackSize >= 2 {
 				// scopeToClose := getLastElement(p.openedNodeStack)
 				scopeToClose := currentScope
-				scopeToClose.Range.End = newScope.Range.Start
+				scopeToClose.rng.End = newScope.Range().Start
 
 				parentScope := p.openedNodeStack[stackSize-2]
 
@@ -262,11 +263,11 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 				p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold/close current scope
 
 			} else {
-				err = &ParseError{Range: newScope.GetRange(), Err: errors.New("extraneous 'end' statement detected")}
+				err = &ParseError{Range: newScope.Range(), Err: errors.New("extraneous 'end' statement detected")}
 			}
 		default:
 			log.Printf("unhandled scope type error\n scope = %#v\n", newScope)
-			panic("scope type '" + newScope.GetKind().String() + "' is not yet handled for statement grouping\n" + newScope.String())
+			panic("scope type '" + newScope.Kind().String() + "' is not yet handled for statement grouping\n" + newScope.String())
 		}
 	}
 
@@ -318,15 +319,15 @@ func Parse(tokens []lexer.Token) (*GroupStatementNode, []lexer.Error) {
 	if size := len(parser.openedNodeStack); size > 1 {
 		// currentScope := getLastElement(parser.openedNodeStack)
 		currentScope := parser.openedNodeStack[size-1]
-		err := ParseError{Range: currentScope.GetRange(),
+		err := ParseError{Range: currentScope.Range(),
 			Err: errors.New("not all group statements ('if/else/define/block/with') have been properly claused")}
 
 		errs = append(errs, err)
 	}
 
 	if size := len(defaultGroupStatementNode.Statements); size > 0 {
-		defaultGroupStatementNode.Range.Start = defaultGroupStatementNode.Statements[0].GetRange().Start
-		defaultGroupStatementNode.Range.End = defaultGroupStatementNode.Statements[size-1].GetRange().End
+		defaultGroupStatementNode.rng.Start = defaultGroupStatementNode.Statements[0].Range().Start
+		defaultGroupStatementNode.rng.End = defaultGroupStatementNode.Statements[size-1].Range().End
 	}
 
 	return defaultGroupStatementNode, errs
@@ -392,7 +393,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 		return varInitialization, nil
 
 	} else if p.accept(lexer.COMMENT) {
-		commentExpression := &CommentNode{Kind: KIND_COMMENT, Value: p.peek(), Range: p.peek().Range}
+		commentExpression := &CommentNode{kind: KIND_COMMENT, Value: p.peek(), rng: p.peek().Range}
 
 		p.nextToken()
 
@@ -420,7 +421,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			ifExpression := NewGroupStatementNode(KIND_IF, keywordToken.Range)
-			ifExpression.Range.End = lastTokenInInstruction.Range.End
+			ifExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip keyword "if"
 
@@ -435,16 +436,16 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + ifExpression.String())
 			}
 
-			if ifExpression.Range.End != expression.GetRange().End {
+			if ifExpression.rng.End != expression.Range().End {
 				panic("ending location mismatch between 'if' statement and its expression\n" + ifExpression.String())
 			}
 
-			switch expression.GetKind() {
+			switch expression.Kind() {
 			case KIND_VARIABLE_ASSIGNMENT, KIND_VARIABLE_DECLARATION, KIND_MULTI_EXPRESSION, KIND_EXPRESSION:
 
 			default:
 				err = NewParseError(&lexer.Token{}, errors.New("'if' do not accept this kind of statement"))
-				err.Range = expression.GetRange()
+				err.Range = expression.Range()
 				return ifExpression, err
 			}
 
@@ -458,7 +459,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			elseExpression := NewGroupStatementNode(KIND_ELSE, keywordToken.Range)
-			elseExpression.Range.End = lastTokenInInstruction.Range.End
+			elseExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'else' token
 
@@ -478,18 +479,18 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. 'else ...' parse error")
 			}
 
-			if elseCompositeExpression.GetRange().End != lastTokenInInstruction.Range.End {
+			if elseCompositeExpression.Range().End != lastTokenInInstruction.Range.End {
 				panic("ending location mismatch between 'else if/with/...' statement and its expression\n" + elseCompositeExpression.String())
 			}
 
-			switch elseCompositeExpression.GetKind() {
+			switch elseCompositeExpression.Kind() {
 			case KIND_IF:
 				elseCompositeExpression.SetKind(KIND_ELSE_IF)
 			case KIND_WITH:
 				elseCompositeExpression.SetKind(KIND_ELSE_WITH)
 			default:
 				err = NewParseError(keywordToken, errors.New("bad syntax for else statement"))
-				err.Range = elseCompositeExpression.GetRange()
+				err.Range = elseCompositeExpression.Range()
 				return elseCompositeExpression, err
 			}
 
@@ -503,7 +504,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			endExpression := NewGroupStatementNode(KIND_END, keywordToken.Range)
-			endExpression.Range.End = lastTokenInInstruction.Range.End
+			endExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'end' token
 
@@ -523,7 +524,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			rangeExpression := NewGroupStatementNode(KIND_RANGE_LOOP, keywordToken.Range)
-			rangeExpression.Range.End = lastTokenInInstruction.Range.End
+			rangeExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken()
 
@@ -552,16 +553,16 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + rangeExpression.String())
 			}
 
-			if rangeExpression.Range.End != expression.GetRange().End {
+			if rangeExpression.Range().End != expression.Range().End {
 				panic("ending location mismatch between 'range' statement and its expression\n" + rangeExpression.String())
 			}
 
-			switch expression.GetKind() {
+			switch expression.Kind() {
 			case KIND_VARIABLE_ASSIGNMENT, KIND_VARIABLE_DECLARATION, KIND_MULTI_EXPRESSION, KIND_EXPRESSION:
 
 			default:
 				err = NewParseError(lastTokenInInstruction, errors.New("'range' do not accept those type of expression"))
-				err.Range = expression.GetRange()
+				err.Range = expression.Range()
 				return rangeExpression, err
 			}
 
@@ -575,7 +576,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			withExpression := NewGroupStatementNode(KIND_WITH, keywordToken.Range)
-			withExpression.Range.End = lastTokenInInstruction.Range.End
+			withExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'with' token
 
@@ -590,16 +591,16 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. 'with ...' parse error")
 			}
 
-			if withExpression.Range.End != expression.GetRange().End {
+			if withExpression.Range().End != expression.Range().End {
 				panic("ending location mismatch between 'range' statement and its expression\n" + withExpression.String())
 			}
 
-			switch expression.GetKind() {
+			switch expression.Kind() {
 			case KIND_VARIABLE_ASSIGNMENT, KIND_VARIABLE_DECLARATION, KIND_MULTI_EXPRESSION, KIND_EXPRESSION:
 
 			default:
 				err = NewParseError(lastTokenInInstruction, errors.New("'with' do not accept those type of expression"))
-				err.Range = expression.GetRange()
+				err.Range = expression.Range()
 				return withExpression, err
 			}
 
@@ -613,7 +614,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			blockExpression := NewGroupStatementNode(KIND_BLOCK_TEMPLATE, keywordToken.Range)
-			blockExpression.Range.End = lastTokenInInstruction.Range.End
+			blockExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'block' token
 
@@ -622,7 +623,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				return blockExpression, err
 			}
 
-			templateExpression := &TemplateStatementNode{Kind: KIND_BLOCK_TEMPLATE, TemplateName: p.peek(), Range: p.peek().Range}
+			templateExpression := &TemplateStatementNode{kind: KIND_BLOCK_TEMPLATE, TemplateName: p.peek(), rng: p.peek().Range}
 			templateExpression.parent = blockExpression
 			blockExpression.ControlFlow = templateExpression
 
@@ -639,16 +640,16 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. can't add expression to ControlFlow\n" + blockExpression.String())
 			}
 
-			if blockExpression.Range.End != expression.GetRange().End {
+			if blockExpression.Range().End != expression.Range().End {
 				panic("ending location mismatch between 'range' statement and its expression\n" + blockExpression.String())
 			}
 
-			switch expression.GetKind() {
+			switch expression.Kind() {
 			case KIND_VARIABLE_ASSIGNMENT, KIND_VARIABLE_DECLARATION, KIND_MULTI_EXPRESSION, KIND_EXPRESSION:
 
 			default:
 				err = NewParseError(templateExpression.TemplateName, errors.New("'block' do not accept those type of expression"))
-				err.Range = expression.GetRange()
+				err.Range = expression.Range()
 				return blockExpression, err
 			}
 
@@ -662,7 +663,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			*/
 
 			defineExpression := NewGroupStatementNode(KIND_DEFINE_TEMPLATE, keywordToken.Range)
-			defineExpression.Range.End = lastTokenInInstruction.Range.End
+			defineExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip 'define' token
 
@@ -671,7 +672,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				return defineExpression, err
 			}
 
-			templateExpression := &TemplateStatementNode{Kind: KIND_DEFINE_TEMPLATE, TemplateName: p.peek(), Range: p.peek().Range}
+			templateExpression := &TemplateStatementNode{kind: KIND_DEFINE_TEMPLATE, TemplateName: p.peek(), rng: p.peek().Range}
 			templateExpression.parent = defineExpression
 			defineExpression.ControlFlow = templateExpression
 
@@ -687,9 +688,9 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 
 		} else if bytes.Compare(keywordToken.Value, []byte("template")) == 0 {
 			templateExpression := &TemplateStatementNode{}
-			templateExpression.Kind = KIND_USE_TEMPLATE
-			templateExpression.Range = keywordToken.Range
-			templateExpression.Range.End = lastTokenInInstruction.Range.End
+			templateExpression.kind = KIND_USE_TEMPLATE
+			templateExpression.rng = keywordToken.Range
+			templateExpression.rng.End = lastTokenInInstruction.Range.End
 			templateExpression.parent = nil
 
 			p.nextToken() // skip 'template' tokens
@@ -713,16 +714,16 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 				panic("returned AST was nil although parsing completed succesfully. can't add expression to ControlFlow\n" + templateExpression.String())
 			}
 
-			if templateExpression.Range.End != expression.GetRange().End {
+			if templateExpression.Range().End != expression.Range().End {
 				panic("ending location mismatch between 'range' statement and its expression\n" + templateExpression.String())
 			}
 
-			switch expression.GetKind() {
+			switch expression.Kind() {
 			case KIND_VARIABLE_ASSIGNMENT, KIND_VARIABLE_DECLARATION, KIND_MULTI_EXPRESSION, KIND_EXPRESSION:
 
 			default:
 				err = NewParseError(templateExpression.TemplateName, errors.New("'template' do not accept those type of expression"))
-				err.Range = expression.GetRange()
+				err.Range = expression.Range()
 				return templateExpression, err
 			}
 
@@ -766,9 +767,9 @@ func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *Parse
 	}
 
 	varDeclarationNode := &VariableDeclarationNode{}
-	varDeclarationNode.Kind = KIND_VARIABLE_DECLARATION
-	varDeclarationNode.Range = variable.Range
-	varDeclarationNode.Range.End = lastTokenInInstruction.Range.End
+	varDeclarationNode.kind = KIND_VARIABLE_DECLARATION
+	varDeclarationNode.rng = variable.Range
+	varDeclarationNode.rng.End = lastTokenInInstruction.Range.End
 	varDeclarationNode.VariableNames = append(varDeclarationNode.VariableNames, variable)
 
 	expression, err := p.multiExpressionParser()
@@ -782,7 +783,7 @@ func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *Parse
 		panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + varDeclarationNode.String())
 	}
 
-	if varDeclarationNode.Range.End != expression.GetRange().End {
+	if varDeclarationNode.Range().End != expression.Range().End {
 		panic("ending location mismatch between 'if' statement and its expression\n" + varDeclarationNode.String())
 	}
 
@@ -814,14 +815,14 @@ func (p *Parser) doubleDeclarationAssignmentParser() (*VariableDeclarationNode, 
 
 	if len(varDeclarationNode.VariableNames) != 1 {
 		err = NewParseError(firstVariable, errors.New("expected one variable after ',' but got something else"))
-		err.Range = varDeclarationNode.Range
+		err.Range = varDeclarationNode.rng
 		return varDeclarationNode, err
 	}
 
 	secondVariable := varDeclarationNode.VariableNames[0]
 	varDeclarationNode.VariableNames = nil
 	varDeclarationNode.VariableNames = append(varDeclarationNode.VariableNames, firstVariable, secondVariable)
-	varDeclarationNode.Range.Start = firstVariable.Range.Start
+	varDeclarationNode.rng.Start = firstVariable.Range.Start
 
 	return varDeclarationNode, nil
 }
@@ -846,10 +847,10 @@ func (p *Parser) initializationAssignmentParser() (*VariableAssignationNode, *Pa
 	}
 
 	varAssignation := &VariableAssignationNode{}
-	varAssignation.Kind = KIND_VARIABLE_ASSIGNMENT
+	varAssignation.kind = KIND_VARIABLE_ASSIGNMENT
 	varAssignation.VariableName = variable
-	varAssignation.Range = variable.Range
-	varAssignation.Range.End = lastTokenInInstruction.Range.End
+	varAssignation.rng = variable.Range
+	varAssignation.rng.End = lastTokenInInstruction.Range.End
 
 	expression, err := p.multiExpressionParser()
 	varAssignation.Value = expression
@@ -861,7 +862,7 @@ func (p *Parser) initializationAssignmentParser() (*VariableAssignationNode, *Pa
 		panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + varAssignation.String())
 	}
 
-	varAssignation.Range.End = expression.Range.End
+	varAssignation.rng.End = expression.Range().End
 
 	return varAssignation, nil
 }
@@ -873,9 +874,9 @@ func (p *Parser) multiExpressionParser() (*MultiExpressionNode, *ParseError) {
 	}
 
 	multiExpression := &MultiExpressionNode{}
-	multiExpression.Kind = KIND_MULTI_EXPRESSION
-	multiExpression.Range.Start = p.peek().Range.Start
-	multiExpression.Range.End = lastTokenInInstruction.Range.End
+	multiExpression.kind = KIND_MULTI_EXPRESSION
+	multiExpression.rng.Start = p.peek().Range.Start
+	multiExpression.rng.End = lastTokenInInstruction.Range.End
 
 	var expression *ExpressionNode
 	var err *ParseError
@@ -914,7 +915,7 @@ func (p *Parser) multiExpressionParser() (*MultiExpressionNode, *ParseError) {
 		}
 	}
 
-	multiExpression.Range.End = expression.Range.End
+	multiExpression.rng.End = expression.Range().End
 
 	return multiExpression, nil
 }
@@ -926,9 +927,9 @@ func (p *Parser) expressionParser() (*ExpressionNode, *ParseError) {
 	}
 
 	expression := &ExpressionNode{}
-	expression.Kind = KIND_EXPRESSION
-	expression.Range.Start = p.peek().Range.Start
-	expression.Range.End = lastTokenInInstruction.Range.End
+	expression.kind = KIND_EXPRESSION
+	expression.rng.Start = p.peek().Range.Start
+	expression.rng.End = lastTokenInInstruction.Range.End
 
 	// var currentSymbol *lexer.Token
 	currentSymbol := p.peek()
@@ -978,7 +979,7 @@ func (p *Parser) expressionParser() (*ExpressionNode, *ParseError) {
 	}
 
 	currentSymbol = getLastElement(expression.Symbols)
-	expression.Range.End = currentSymbol.Range.End
+	expression.rng.End = currentSymbol.Range.End
 
 	return expression, nil
 }
@@ -1050,7 +1051,7 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 
 	relativePositionStartGoCode := lexer.ConvertSingleIndexToTextEditorPosition(commentExpression.Value.Value, indexStartGoCode)
 
-	reach := commentExpression.Range
+	reach := commentExpression.rng
 	reach.Start.Line += relativePositionStartGoCode.Line
 	reach.Start.Character = relativePositionStartGoCode.Character
 
@@ -1061,9 +1062,6 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 	}
 
 	log.Printf("\nHourray, go:code found : %q\n\n", comment)
-
-	log.Printf("go:code stuff:\n range comment = %s\n range gocode = %s \n",
-		commentExpression.Range, commentExpression.GoCode.Range)
 }
 
 func (p Parser) peek() *lexer.Token {

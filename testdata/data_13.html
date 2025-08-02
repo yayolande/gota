@@ -1,0 +1,41 @@
+{{ . }}
+
+{{ $.name.age }}
+{{ $.city }} // this should throw an error
+{{ $.name }}
+{{ $.age }}
+{{ $.konor }}
+{{ $ok := .konor }}
+{{ $ok }}
+{{ $ok = 12 }}
+
+{{ getPersonRating .name .age }}
+{{ getPersonRating .age .name }}
+{{ getPersonRating .age .name }}
+{{ getPersonRating .age .age }}
+{{ getPersonRating $.age $.age }}
+{{ getPersonRating $.name $.name }}
+{{ .konor }}
+
+{{ $.name }}
+{{ $.age }}
+{{ $.name.age }} // this should throw an error
+{{ $belarus }}
+
+{{ $.city }}
+{{ getPersonRating $.ddd $.age }}
+
+
+
+{{- /* go:code 
+	// type Input struct {
+		// name string
+	// }
+
+	// func (i Input) name () string
+	func getPersonRating(string, int) int
+
+*/ -}}
+
+{{ $.name }}
+

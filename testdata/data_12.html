@@ -1,36 +1,87 @@
 
+{{ range .unspoken.series }}
+ {{ . }}
+{{ end }}
+
+{{ range $index, $val := .unspoken.series }}
+	{{ . }}
+	{{ $index }}
+	{{ $val }} // to_fix: hovering this variable break the lsp
+{{ end }}
+
 {{ $ }}
 {{ . }}
 {{ $.name }}
 {{ $.age }}
 {{ $.cigale }}
+{{ $.Stringer.city }}
 {{ magic $.name $.age }}
 {{ magic $.age $.age }}
+{{ carole.city }}
+{{ carolee.j }}
+{{ carolee.derision }}
+{{ merkol.city }}
+{{ $name. }}
+{{ $12 }}
+{{ .12 }} // this should be a float
 
 {{ diction }}
 {{ martinelli }}
 
 {{ template "name" . }}
+{{ $name := "hello" }}
+{{ $name.mes }}
+
+{{ .unspoken }}
+{{ .unspoken.no }}
+{{ .unspoken.alt }}
+{{ .unspoken.typ }}
+{{ .unspoken.name }}
+
+{{ magic .unspoken.alt .age }}
+{{ magic .unspoken.alt .unspoken.alt }}
 
 {{/* go:code
 	type Input struct {
 		name	string
 		city string
 		age	int
+		unspoken struct {
+			typ int
+			name string
+			alt any
+			series []int
+		}
 	}
+
+	func (i Input) Stringer() Input
 
 	func martinelli() string
 	func magic(name string, age int) string
+	func carole () Input
+	func merkol (str string) Input
 */}}
+
+{{ $person.info.name }}
+{{ $num := 123 }}
+{{ $num = 3 }}
+{{ $num = .unspoken.alt }}
+{{ $any := .unspoken.alt }}
+{{ $any = 12 }}
+{{ $num }}
+{{ $any}}
 
 {{ $ }}
 {{ template "meborne" . }}
 
 {{ template "ee" . }}
 
+{{ $name }}
 
 {{ define "alal" }}
+
 	{{ template "meborne" . }}
+
 {{ end }}
 
 {{ define "meborne" }}

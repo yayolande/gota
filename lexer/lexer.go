@@ -21,20 +21,20 @@ type Range struct {
 	End   Position
 }
 
-func (r Range) Contains(p Position) bool {
-	if r.Start.Line > p.Line {
+func (r Range) Contains(pos Position) bool {
+	if r.Start.Line > pos.Line {
 		return false
 	}
 
-	if r.End.Line < p.Line {
+	if r.End.Line < pos.Line {
 		return false
 	}
 
-	if r.Start.Line == p.Line && r.Start.Character > p.Character {
+	if r.Start.Line == pos.Line && pos.Character < r.Start.Character {
 		return false
 	}
 
-	if r.End.Line == p.Line && r.End.Character < p.Character {
+	if r.End.Line == pos.Line && pos.Character >= r.End.Character {
 		return false
 	}
 
@@ -47,6 +47,16 @@ type Token struct {
 	ID    Kind
 	Range Range
 	Value []byte
+}
+
+func NewToken(id Kind, reach Range, val []byte) *Token {
+	fresh := &Token{
+		ID:    id,
+		Range: reach,
+		Value: val,
+	}
+
+	return fresh
 }
 
 func CloneToken(old *Token) *Token {
@@ -387,7 +397,7 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 					err = errors.New("comment syntax error")
 				}
 			} else {
-				err = errors.New("character(s) not recognized, perhaps you should properly separate the word")
+				err = errors.New("character(s) not recognized, perhaps separate the word ?")
 			}
 
 			kindError := NOT_FOUND
@@ -413,7 +423,7 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 	}
 
 	if len(tokenHandler.Tokens) == 0 {
-		tokenHandler.appendError(errors.New("empty tepmlate not allowed"), &Token{ID: NOT_FOUND, Range: initialPosition})
+		tokenHandler.appendError(errors.New("empty template"), &Token{ID: NOT_FOUND, Range: initialPosition})
 	}
 
 	return tokenHandler.Tokens, tokenHandler.Errs
@@ -569,7 +579,8 @@ func createTokenizer() *tokenizer {
 			ID:    DOT_VARIABLE,
 		},
 		{
-			Value: `\w+`,
+			// Value: `\w+`,
+			Value: `[[:alpha:]]\w+(?:[.][[:alpha:]]\w*)*`,
 			ID:    FUNCTION,
 		},
 		{

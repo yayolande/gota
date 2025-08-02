@@ -320,7 +320,8 @@ func Parse(tokens []lexer.Token) (*GroupStatementNode, []lexer.Error) {
 		// currentScope := getLastElement(parser.openedNodeStack)
 		currentScope := parser.openedNodeStack[size-1]
 		err := ParseError{Range: currentScope.Range(),
-			Err: errors.New("not all group statements ('if/else/define/block/with') have been properly claused")}
+			// Err: errors.New("group statements '"+ currentScope.kind.String() + "' not claused")}
+			Err: errors.New("missing matching '{{ end }}' statement")}
 
 		errs = append(errs, err)
 	}
@@ -679,7 +680,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			p.nextToken()
 
 			if !p.expect(lexer.EOL) {
-				err := NewParseError(p.peek(), errors.New("'define' do not accept any expression after its name"))
+				err := NewParseError(p.peek(), errors.New("'define' do not accept any expression"))
 				err.Range.End = lastTokenInInstruction.Range.End
 				return defineExpression, err
 			}
@@ -749,7 +750,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 
 func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *ParseError) {
 	if !p.accept(lexer.DOLLAR_VARIABLE) {
-		err := NewParseError(p.peek(), errors.New("variable name must start by '$' and contains alphanumerical char"))
+		err := NewParseError(p.peek(), errors.New("variable name must start with '$'"))
 		return nil, err
 	}
 

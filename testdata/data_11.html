@@ -4,7 +4,7 @@
 {{ end }}
 
 {{ define "bb" }}
-	{{ template "cc" . }}
+	{{ template "cc" .$ }}
 	{{ template "cc" . }}
 {{ end }}
 
@@ -62,7 +62,8 @@
 
 	{{ template "laptop" .}}
 	{{ template "laptop" .}}
-	{{ template "laptop" .}}
+	{{ template "laptop" .unknown }}
+	{{ template "laptop" 23 }}
 
 	{{ }}
 	{{ $name }}
@@ -83,6 +84,7 @@
 		city string
 		status bool
 		salary int
+		unknown any
 	}
 
 	func mello() int

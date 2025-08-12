@@ -1,0 +1,173 @@
+{{- /* fake go:code  */ -}}
+ 
+
+{{ }}
+
+{{ .Age }}
+{{ $ := 12 }}
+{{ $ := "12" }}
+{{ . := 12 }} // impossible to 'hover' var '.'
+{{ . = 12 }}
+{{ . }}
+
+{{ dell }}
+{{ diction }}
+{{ dd "hell" }}
+{{ dict "hellen" "output" }}
+{{ dict "hellen" 12 }}
+{{ dict "hellen" 12.3 }}	// must through an error since 12.3 is a 'float' rather than an 'int'
+{{ 23 | dict 44 }}
+{{ dict "222" 23 }}
+{{ brandon "mis" }}
+{{ $dict := "hello" }}
+
+{{ $new.num := 23 }}
+{{ $dict.num := 23 }}
+{{ $dict.num = 23 }}
+
+{{ $dict "jjjj" }}
+{{ $dict }}
+{{ dict }}
+{{ dandelion }}
+{{ $var := "hello" }}
+
+{{ $var = 23 }}
+
+{{ $var }}
+{{ $ := "elton" }}  // this one right here should be a big no-no, redefining $ is not good (analysis) although it is valid syntax
+{{ $. := "elton" }}  should through an error as well (bad syntax)
+{{ $.angolmoi }}		// should not through an error if '$' stills refer to initial input (only linting error is possible, not syntax error) {{ $.ban }}
+{{ $.planet := "elton" }}	// must through an error 
+{{ $.planet = "elton" }}	// must through an error because of the assignment
+{{ .planet = "hello" }}		// must through an error
+{{ .$ }}
+
+source = ` {{ concat (((upper "world") )"--breaker" }} `. The previous text is valid under html/template rule, make it pass
+
+{{- /*go:codes func dandelion(int) int */ -}}
+
+{{ }}
+{{ dandelion }}
+
+{{ | }}
+
+{{ $ }}
+{{ jor := "jd" }}
+{{ $val := "hello" }}
+
+{{ $val := "the storm" }}
+{{ . }}
+
+{{ template "rickus" . }}
+
+{{ define "rickus" }}
+	{{/* go:code
+
+	type Input struct {
+		name string
+		age int
+		dd
+	}
+
+	func mortal() string
+	func () 
+
+	func mikey()
+
+
+	*/}}
+
+	{{ $val := "calco" }}
+	{{ $val }}
+	{{ $ }}
+	{{ . }}
+{{ end }}
+
+{{ $val }}
+
+{{ define "rickus" }}
+{{ end }}
+
+{{ template "rickus" . }}
+
+{{ define "tonton" .Pal }}
+	{{ define "uncle" }}
+		{{/* go:code type Input struct { city string } */}}
+	{{ end }}
+{{ end }}
+
+{{ define "benso" }}
+	{{ define "aunt" }}
+	{{ end }}
+	{{ $ }}
+	{{ $ = 34 }}
+	{{ $ = 34 }}
+{{ end }}
+
+{{ template "uncle" . }}
+{{ template "aunt" . }}
+{{ template "laptop" . }}
+
+
+{{ if ((true)) }}
+	{{ define "tata" }}
+	{{ end }}
+	{{ getName "dd" }}
+{{ end }}
+
+{{ template "tonton" . }}
+{{ template "tata" . }}
+{{ dict "steveen" 23 }}
+{{ 23 | dict "steveen" }}
+{{ dict = "hell" }}
+
+{{/*s go:code func getName(name b) */}}
+
+
+{{/* 
+
+
+
+
+go:code     
+
+var nam string
+
+type Input struct {
+	Name		string
+	Age		int
+	City		string
+}
+
+func (i Input) banana() string
+func (i Input) GetName() string
+func (i *Input) SetName(string) int
+
+var melo int
+func halo(, )      
+func diction() 
+// func dict (string, a int) string
+func dict (string, int) (string, error)
+func ddd(dd) 
+func dd(d djd d) 
+func maso(_)
+func bro(_, _ string) string
+
+var nanomachine func(name string, exp int) int
+
+*/}}
+
+{{ template "meborne" . }}
+
+{{ $megan := "Meg" }}
+{{ }}
+
+
+
+{{ $megan }}
+
+
+{{ dict }}
+{{ diction }}
+{{ nanomachine }}
+

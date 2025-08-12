@@ -1,4 +1,25 @@
+{{ $str := "nemar" }}
+{{ $num := 12 }}
+{{ $str }}
+{{ $str = $name }}
+{{ $num = 12 }}
+
+{{ $name := $.age }}
+{{ $name = "sheldon" }}
+{{ $name = "23"}}
+
+{{ $str = $.name }}
+
+{{ $fake_age := .age }}
+{{ $fake_age }}
+
 {{ . }}
+{{ .name }}
+{{ $.meli }}
+
+{{ template "laptop" "name" }}
+{{ templgolang switch breakgolang switch breakate "laptop" 12 }}
+{{ templgolang switch breakate "laptop" "name" }} // hover shouldn't give a variable info
 
 {{ $.name.age }}
 {{ $.city }} // this should throw an error
@@ -10,14 +31,21 @@
 {{ $ok = 12 }}
 
 {{ getPersonRating .name .age }}
+{{ getPersonRating .name $fake_age }}
 {{ getPersonRating .age .name }}
 {{ getPersonRating .age .name }}
 {{ getPersonRating .age .age }}
 {{ getPersonRating $.age $.age }}
 {{ getPersonRating $.name $.name }}
+
+{{ getPersonRating $name .age }} 
+
 {{ .konor }}
+{{ getPersonRating $.ki.name $.ki.age }}
 
 {{ $.name }}
+{{ $.ki.name }}
+{{ $.ki.age }}
 {{ $.age }}
 {{ $.name.age }} // this should throw an error
 {{ $belarus }}

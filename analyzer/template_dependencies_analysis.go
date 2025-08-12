@@ -658,8 +658,17 @@ func (h *workspaceTemplateBuilder) BuildTemplateDefinition(templateScope *parser
 		file.templates[template.TemplateName()] = templateDef
 	}
 
-	globalVariables, localVariables := NewGlobalAndLocalVariableDefinition(templateScope, fileName)
+	// swap and keep reference to the true root of the file
+	// this is required because late inference of variable type use the root value
+	// and since this analysis will not go further up than 'templateScope'
+	// we temporarily assign it as root, to force the variable type analysis at that moment
+	originalRoot := file.root
+	file.root = templateScope
+
+	globalVariables, localVariables := NewGlobalAndLocalVariableDefinition(templateScope, templateScope.Parent(), fileName)
 	typ, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
+
+	file.root = originalRoot
 
 	h.templateManager.AnalyzedDefinedTemplatesWithinFile[fileName].TemplateErrs[templateScope] = errs
 

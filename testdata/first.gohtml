@@ -9,36 +9,24 @@
 	{{ $val }} // to_fix: hovering this variable break the lsp
 {{ end }}
 
-{{ range $val := .unspoken.series }}
-	{{ . }}
-	{{ $val }}
-	{{ $val }}
-{{ end }}
-
-{{ .unspoken.series }}
-
-{{ $id, $el := . }}
-
 {{ $ }}
 {{ . }}
 {{ $.name }}
-{{ $.name }}
 {{ $.age }}
+{{ $.cigale }}
 {{ $.Stringer.city }}
 {{ magic $.name $.age }}
 {{ magic $.age $.age }}
-{{ magic .age .age }}
-{{ magic $kate $.age }}
-{{ magic 12 $kate $.age }}
 {{ carole.city }}
 {{ carolee.j }}
 {{ carolee.derision }}
 {{ merkol.city }}
-{{ $name. }}
+{{ $name = ""}}
 {{ $12 }}
 {{ .12 }} // this should be a float
 
 {{ diction }}
+{{ eq }}
 {{ martinelli }}
 
 {{ template "name" . }}
@@ -57,7 +45,7 @@
 
 
 {{/* go:code
-	type Input struct {
+	type input struct {
 		name	string
 		city string
 		age	int

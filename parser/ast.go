@@ -279,7 +279,7 @@ func (g GroupStatementNode) IsGroupWithDotVariableReset() bool {
 	return false
 }
 
-func (g GroupStatementNode) IsGroupWithDollarDotVariableReset() bool {
+func (g GroupStatementNode) IsGroupWithDollarAndDotVariableReset() bool {
 	switch g.kind {
 	case KIND_DEFINE_TEMPLATE, KIND_BLOCK_TEMPLATE, KIND_GROUP_STATEMENT:
 

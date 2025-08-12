@@ -1,0 +1,24 @@
+{{- /* go:code
+	func magic(string, int) string
+*/}}
+
+{{ define "tpl 1" }}
+	{{/* go:code
+		type input string
+
+	*/}}
+
+	{{ .name }}
+	{{ .age }}
+	{{ magic $.name .age }}
+	{{ magic $.age .age }}
+{{ end }}
+
+{{ .name }}
+{{ .age }}
+{{ .city }}
+
+{{ template "tpl 1" . }}
+{{ template "tpl 1" $ }}
+
+{{ template "tpl 1" "namerr" }}

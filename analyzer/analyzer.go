@@ -1,11 +1,11 @@
 // TODO: features to add
 //
-// [ ] Unused variable detection
+// [x] Unused variable detection
 // [ ] Check that 'keyword' and 'types' are not used as parameter names (functions)
 // [x] Function declaration in comment have invalid 'Range'
-// [ ] Dectection of cyclical import
+// [x] Dectection of cyclical import
 // [ ] Advanced type-system
-// [ ] Go-To Definition
+// [x] Go-To Definition
 // [ ] Testing for major stable features
 
 package analyzer
@@ -23,6 +23,7 @@ import (
 	"log"
 	"maps"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/yayolande/gota/lexer"
@@ -30,9 +31,20 @@ import (
 )
 
 var (
-	TYPE_ANY                                   = types.Universe.Lookup("any")
-	TYPE_ERROR                                 = types.Universe.Lookup("error")
-	TEMPLATE_MANAGER *WorkspaceTemplateManager = nil
+	TYPE_ANY                                           = types.Universe.Lookup("any")
+	TYPE_ERROR                                         = types.Universe.Lookup("error")
+	TEMPLATE_MANAGER         *WorkspaceTemplateManager = nil
+	UNIQUE_UNIVERSAL_COUNTER int                       = 0
+)
+
+const (
+	OPERATOR_STRICT_TYPE OperatorType = iota
+	OPERATOR_COMPATIBLE_TYPE
+	// OPERATOR_KEY_VALUE_ITERABLE_TYPE
+	OPERATOR_VALUE_ITERABLE_TYPE
+	OPERATOR_KEY_ITERABLE_TYPE
+
+	NAME_TEMPORARY_VAR string = "__TMP_VAR_TO_RECHECK_"
 )
 
 func init() {
@@ -45,6 +57,15 @@ func init() {
 	}
 
 	TEMPLATE_MANAGER = NewWorkspaceTemplateManager()
+}
+
+// Call this function instead of interacting with 'UNIQUE_UNIVERSAL_COUNTER' instead.
+// Its goal is to return an unique 'int' at each call.
+// In other word, this function guaranty that that 2 function call will ever have the same value.
+// Very useful to generate number that must never enter in collision.
+func getUniqueNumber() int {
+	UNIQUE_UNIVERSAL_COUNTER++
+	return UNIQUE_UNIVERSAL_COUNTER
 }
 
 const (
@@ -70,26 +91,58 @@ const (
 
 // TODO: add 'Stringer' method for FunctionDefinition, VariableDefinition, DataStructureDefinition
 
-type InferenceFunc func(symbol *lexer.Token, symbolType, constraintType types.Type) *parser.ParseError
+type InferenceFunc func(symbol *lexer.Token, symbolType, constraintType types.Type) (*collectionPostCheckImplicitTypeNode, *parser.ParseError)
 
+type InferenceFoundReturn struct {
+	uniqueVariableInExpression     *collectionPostCheckImplicitTypeNode
+	variablesToRecheckAtEndOfScope []*collectionPostCheckImplicitTypeNode
+}
+
+type KeyValuePairDefinition struct {
+	key, value *VariableDefinition
+}
+
+type OperatorType int
+
+// TODO: Dont like this type name. use 'collectionPostCheckVariableImplicitType' instead
 type collectionPostCheckImplicitTypeNode struct {
-	candidate       *nodeImplicitType
+	candidate       *nodeImplicitType // Warning, this implicit node is not related to its variable definition
 	candidateDef    *VariableDefinition
 	candidateSymbol *lexer.Token
 
 	constraint       *nodeImplicitType
 	constraintDef    *VariableDefinition
 	constraintSymbol *lexer.Token
+
+	operation OperatorType
 }
 
+// TODO: Dont like this type name. use 'collectionPostCheckVariableImplicitType' instead
 func newCollectionPostCheckImplicitTypeNode(candidateNode, constraintNode *nodeImplicitType, candidateDef, constraintDef *VariableDefinition, candidateToken, constraintToken *lexer.Token) *collectionPostCheckImplicitTypeNode {
+	if candidateToken == nil {
+		log.Printf("candidate token to recheck later is <nil>\n"+" candidateImplicitType = %s\n candidateVarDef = %s\n", candidateNode, candidateDef)
+		panic("candidate token to recheck later is <nil>")
+	} else if candidateNode == nil {
+		log.Printf("candidate implicit tree type to recheck later is <nil>\n"+" candidateVarDef = %s\n candidateToken = %s\n", candidateDef, candidateToken)
+		panic("candidate implicit tree type to recheck later is <nil>")
+	} else if candidateDef == nil {
+		log.Printf("condidate variable definition to recheck later is <nil>\n"+" candidateTree = %s\n candidateToken = %s\n", candidateNode, candidateToken)
+		panic("condidate variable definition to recheck later is <nil>")
+	} else if constraintNode == nil {
+		log.Printf("constraint implicit tree type to recheck later is <nil>\n"+" constraintVarDef = %s\n constraintToken = %s\n", constraintDef, constraintToken)
+		panic("constraint implicit tree type to recheck later is <nil>")
+	}
+
 	collection := &collectionPostCheckImplicitTypeNode{
-		candidate:        candidateNode,
+		candidate:       candidateNode,
+		candidateDef:    candidateDef,
+		candidateSymbol: candidateToken,
+
 		constraint:       constraintNode,
-		candidateDef:     candidateDef,
 		constraintDef:    constraintDef,
-		candidateSymbol:  candidateToken,
 		constraintSymbol: constraintToken,
+
+		operation: OPERATOR_STRICT_TYPE,
 	}
 
 	return collection
@@ -103,12 +156,17 @@ type collectionPostCheckVariable struct {
 }
 
 func newCollectionPostCheckVariable(varDef *VariableDefinition, symbol *lexer.Token, constraintType types.Type) *collectionPostCheckVariable {
-	return &collectionPostCheckVariable{
-		varDef:                 varDef,
-		symbol:                 symbol,
-		constraintType:         constraintType,
-		strictTypeCheckEnabled: true,
-	}
+	// func newCollectionPostCheckVariable(varDef *VariableDefinition, symbol *lexer.Token, constraintType types.Type) *collectionPostCheckImplicitTypeNode {
+	panic("function deprecated")
+
+	/*
+		return &collectionPostCheckVariable{
+			varDef:                 varDef,
+			symbol:                 symbol,
+			constraintType:         constraintType,
+			strictTypeCheckEnabled: true,
+		}
+	*/
 }
 
 type NodeDefinition interface {
@@ -160,18 +218,17 @@ func (f FunctionDefinition) TypeString() string {
 	return str
 }
 
+// Declared type (type known at declaration) VS inferred type (type deduced by compiler)
 type VariableDefinition struct {
 	node     parser.AstNode // direct node containing info about this variable
 	parent   *parser.GroupStatementNode
 	rng      lexer.Range // variable lifetime
 	fileName string
 	name     string
-	typ      types.Type
+	typ      types.Type // declared type
 
-	TreeImplicitType *nodeImplicitType
-	IsValid          bool
-	IsUsedOnce       bool // Only useful to detect whether or not a variable have never been used in the program
-	UsageFrequency   int
+	TreeImplicitType *nodeImplicitType // inferred type
+	IsUsedOnce       bool              // Only useful to detect whether or not a variable have never been used in the scope
 }
 
 func (v VariableDefinition) Name() string {
@@ -223,7 +280,6 @@ type TemplateDefinition struct {
 	fileName  string
 	name      string
 	inputType types.Type
-	isValid   bool
 }
 
 func (t TemplateDefinition) Name() string {
@@ -255,16 +311,15 @@ func (t TemplateDefinition) TypeString() string {
 }
 
 type FileDefinition struct {
-	root                                  *parser.GroupStatementNode
-	name                                  string
-	typeHints                             map[*parser.GroupStatementNode]types.Type // ???
-	scopeToVariables                      map[*parser.GroupStatementNode](map[string]*VariableDefinition)
-	variableToRecheckAtEndOfScope         map[*parser.GroupStatementNode][]*collectionPostCheckVariable
-	implicitTypeNodeToRecheckAtEndOfScope map[*parser.GroupStatementNode][]*collectionPostCheckImplicitTypeNode
-	functions                             map[string]*FunctionDefinition
-	templates                             map[string]*TemplateDefinition
-	isTemplateDependencyAnalyzed          bool
-	firstTokenVarExpressionToRecheck      *collectionPostCheckVariable
+	root                                       *parser.GroupStatementNode
+	name                                       string
+	typeHints                                  map[*parser.GroupStatementNode]types.Type // ???
+	scopeToVariables                           map[*parser.GroupStatementNode](map[string]*VariableDefinition)
+	functions                                  map[string]*FunctionDefinition
+	templates                                  map[string]*TemplateDefinition
+	isTemplateDependencyAnalyzed               bool
+	extraVariableNameWithTypeInferenceBehavior map[string]*VariableDefinition // only useful to allow type inference on 'key' of the loop
+	secondaryVariable                          *VariableDefinition            // only useful for passing around the 'key' of the loop
 	// WorkspaceTemplates	map[string]*TemplateDefinition
 }
 
@@ -305,8 +360,8 @@ func NewFileDefinition(fileName string, root *parser.GroupStatementNode, outterT
 
 	file.typeHints = make(map[*parser.GroupStatementNode]types.Type)
 	file.templates = make(map[string]*TemplateDefinition)
-	file.variableToRecheckAtEndOfScope = make(map[*parser.GroupStatementNode][]*collectionPostCheckVariable)
-	file.implicitTypeNodeToRecheckAtEndOfScope = make(map[*parser.GroupStatementNode][]*collectionPostCheckImplicitTypeNode)
+	file.extraVariableNameWithTypeInferenceBehavior = make(map[string]*VariableDefinition)
+	file.secondaryVariable = nil
 
 	// 2. build external templates available for the current file
 	foundMoreThanOnce := make(map[string]bool)
@@ -371,13 +426,12 @@ func NewFileDefinitionFromPartialFile(partialFile *FileDefinition, outterTemplat
 	return file, globalVariables, localVariables
 }
 
-func NewTemplateDefinition(name string, fileName string, node parser.AstNode, rng lexer.Range, typ types.Type, isValid bool) *TemplateDefinition {
+func NewTemplateDefinition(name string, fileName string, node parser.AstNode, rng lexer.Range, typ types.Type) *TemplateDefinition {
 	def := &TemplateDefinition{}
 	def.name = name
 	def.fileName = fileName
 	def.node = node
 	def.rng = rng
-	def.isValid = isValid
 	def.inputType = typ
 
 	return def
@@ -436,7 +490,6 @@ func CloneTemplateDefinition(src *TemplateDefinition) *TemplateDefinition {
 		fileName:  src.fileName,
 		name:      src.Name(),
 		inputType: src.inputType,
-		isValid:   src.isValid,
 	}
 
 	return dst
@@ -572,7 +625,6 @@ func NewVariableDefinition(variableName string, node parser.AstNode, parent *par
 
 	def.TreeImplicitType = nil
 	def.typ = TYPE_ANY.Type()
-	def.IsValid = true
 
 	if node != nil {
 		def.node = node
@@ -594,9 +646,7 @@ func cloneVariableDefinition(old *VariableDefinition) *VariableDefinition {
 	fresh.rng = old.rng
 
 	fresh.IsUsedOnce = old.IsUsedOnce
-	fresh.IsValid = old.IsValid
 	fresh.TreeImplicitType = old.TreeImplicitType
-	fresh.UsageFrequency = old.UsageFrequency
 
 	return fresh
 }
@@ -610,7 +660,7 @@ func DefinitionAnalysisFromPartialFile(partialFile *FileDefinition, outterTempla
 	file, globalVariables, localVariables := NewFileDefinitionFromPartialFile(partialFile, outterTemplate)
 	file.isTemplateDependencyAnalyzed = true
 
-	typ, errs := definitionAnalysisRecursive(file.root, nil, file, globalVariables, localVariables)
+	typ, _, errs := definitionAnalysisRecursive(file.root, nil, file, globalVariables, localVariables)
 
 	_ = typ
 	// file.typeHints[file.root] = typ[0]
@@ -625,48 +675,50 @@ func DefinitionAnalysis(fileName string, node *parser.GroupStatementNode, outter
 
 	fileInfo, globalVariables, localVariables := NewFileDefinition(fileName, node, outterTemplate)
 
-	_, errs := definitionAnalysisRecursive(node, nil, fileInfo, globalVariables, localVariables)
+	_, _, errs := definitionAnalysisRecursive(node, nil, fileInfo, globalVariables, localVariables)
 
 	return fileInfo, errs
 }
 
-func definitionAnalysisRecursive(node parser.AstNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisRecursive(node parser.AstNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if globalVariables == nil || localVariables == nil {
 		panic("arguments global/local variable defintion for 'definitionAnalysis()' shouldn't be 'nil'")
 	}
 
 	var errs []lexer.Error
+	var localInferences InferenceFoundReturn
 	var statementType [2]types.Type
 
 	switch n := node.(type) {
 	case *parser.GroupStatementNode:
-		statementType, errs = definitionAnalysisGroupStatement(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisGroupStatement(n, parent, file, globalVariables, localVariables)
 
 	case *parser.TemplateStatementNode:
-		statementType, errs = definitionAnalysisTemplatateStatement(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisTemplatateStatement(n, parent, file, globalVariables, localVariables)
 
 	case *parser.CommentNode:
-		statementType, errs = definitionAnalysisComment(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisComment(n, parent, file, globalVariables, localVariables)
 
 	case *parser.VariableDeclarationNode:
-		statementType, errs = definitionAnalysisVariableDeclaration(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisVariableDeclaration(n, parent, file, globalVariables, localVariables)
 
 	case *parser.VariableAssignationNode:
-		statementType, errs = definitionAnalysisVariableAssignment(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisVariableAssignment(n, parent, file, globalVariables, localVariables)
 
 	case *parser.MultiExpressionNode:
-		statementType, errs = definitionAnalysisMultiExpression(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisMultiExpression(n, parent, file, globalVariables, localVariables)
 
 	case *parser.ExpressionNode:
-		statementType, errs = definitionAnalysisExpression(n, parent, file, globalVariables, localVariables)
+		statementType, localInferences, errs = definitionAnalysisExpression(n, parent, file, globalVariables, localVariables)
 
 	default:
+		panic("unknown parseNode found. node type = " + node.Kind().String())
 	}
 
-	return statementType, errs
+	return statementType, localInferences, errs
 }
 
-func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if globalVariables == nil || localVariables == nil {
 		panic("arguments global/local/function/template defintion for 'DefinitionAnalysis()' shouldn't be 'nil' for 'GroupStatementNode'")
 	}
@@ -682,9 +734,11 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 	maps.Copy(scopedGlobalVariables, localVariables)
 
 	localVariables = map[string]*VariableDefinition{} // 'localVariables' lost reference to the parent 'map', so no need to worry using it
+	file.secondaryVariable = nil
 
 	var errs []lexer.Error
 	var localErrs []lexer.Error
+	var inferences InferenceFoundReturn
 
 	var controlFlowType [2]types.Type
 	var scopeType [2]types.Type
@@ -705,7 +759,23 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 			panic("this 'GroupStatementNode' expect a non-nil 'controlFlow' based on its type ('Kind') " + node.Kind().String())
 		}
 
-		controlFlowType, errs = definitionAnalysisRecursive(node.ControlFlow, node, file, scopedGlobalVariables, localVariables)
+		// The only purpose of this is to ease the computation of '.' var type
+		// by embedding 'MultiExpressionNode' within a 'VariableDeclarationNode'
+		if node.Kind() == parser.KIND_RANGE_LOOP {
+			if mExpression, ok := node.ControlFlow.(*parser.MultiExpressionNode); ok {
+				varName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+				variable := lexer.NewToken(lexer.DOLLAR_VARIABLE, node.ControlFlow.Range(), []byte(varName))
+
+				temporaryVarNode := parser.NewVariableDeclarationNode(parser.KIND_VARIABLE_DECLARATION, node.Range(), nil, mExpression)
+				temporaryVarNode.VariableNames = append(temporaryVarNode.VariableNames, variable)
+
+				controlFlowType, inferences, errs = definitionAnalysisRecursive(temporaryVarNode, node, file, scopedGlobalVariables, localVariables)
+
+				break
+			}
+		}
+
+		controlFlowType, inferences, errs = definitionAnalysisRecursive(node.ControlFlow, node, file, scopedGlobalVariables, localVariables)
 	}
 
 	// 3. Set Variables Scope
@@ -713,32 +783,69 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 	switch node.Kind() {
 	case parser.KIND_IF, parser.KIND_ELSE, parser.KIND_ELSE_IF, parser.KIND_END:
 
-	case parser.KIND_RANGE_LOOP, parser.KIND_WITH, parser.KIND_ELSE_WITH:
+	case parser.KIND_RANGE_LOOP:
+		var primaryVariable *VariableDefinition
 
+		if inferences.uniqueVariableInExpression == nil {
+			primaryVariable = NewVariableDefinition(".", node, node.Parent(), file.FileName())
+			primaryVariable.typ = types.Typ[types.Invalid]
+
+		} else {
+			primaryVariable = inferences.uniqueVariableInExpression.candidateDef
+		}
+
+		localVariables["."] = primaryVariable
+		markVariableAsUsed(localVariables["."])
+
+		// if 'key' exists for the current loop, enable type inference for it
+		// (this is an exceptional case only found in 'range' loop, since everywhere else '$' var dont have type inference capability)
+		if file.secondaryVariable != nil {
+			def := file.secondaryVariable
+			file.secondaryVariable = nil
+
+			if otherDef := file.extraVariableNameWithTypeInferenceBehavior[def.name]; otherDef != nil { // useful to save and later put back the original value, if it exists in the first place
+				defer func() {
+					file.extraVariableNameWithTypeInferenceBehavior[def.name] = otherDef
+				}()
+			}
+
+			file.extraVariableNameWithTypeInferenceBehavior[def.name] = def
+		}
+
+	case parser.KIND_WITH, parser.KIND_ELSE_WITH:
 		localVariables["."] = NewVariableDefinition(".", node.ControlFlow, node, file.Name())
 		localVariables["."].typ = controlFlowType[0]
+
+		if types.Identical(controlFlowType[0], TYPE_ANY.Type()) && inferences.uniqueVariableInExpression != nil {
+			rhs := inferences.uniqueVariableInExpression
+			inferences.uniqueVariableInExpression = nil
+
+			localVariables["."].TreeImplicitType = extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol)
+
+			fakeTree := newNodeImplicitType("$_fake_tree", TYPE_ANY.Type(), node.Range())
+			fakeToken := lexer.NewToken(lexer.DOLLAR_VARIABLE, localVariables["."].rng, []byte("$fake_root"))
+
+			recheck := newCollectionPostCheckImplicitTypeNode(localVariables["."].TreeImplicitType, fakeTree, localVariables["."], nil, fakeToken, nil)
+			inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, recheck) // enable late type resolution for type inference
+		}
 
 		markVariableAsUsed(localVariables["."])
 
 	case parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE, parser.KIND_GROUP_STATEMENT:
-
 		scopedGlobalVariables = make(map[string]*VariableDefinition)
 		localVariables = make(map[string]*VariableDefinition)
 
 		localVariables["."] = NewVariableDefinition(".", node, node.Parent(), file.name)
 		localVariables["$"] = localVariables["."]
-		// localVariables["$"] = NewVariableDefinition("$", node, file.name)
-
-		localVariables["."].IsUsedOnce = true
+		markVariableAsUsed(localVariables["."])
 
 		commentGoCode := node.ShortCut.CommentGoCode
-
 		if commentGoCode != nil {
-			_, localErrs := definitionAnalysisComment(commentGoCode, node, file, scopedGlobalVariables, localVariables)
-
+			_, _, localErrs := definitionAnalysisComment(commentGoCode, node, file, scopedGlobalVariables, localVariables)
 			errs = append(errs, localErrs...)
 		}
 
+		// TODO:
 		// WIP
 		if node.Kind() == parser.KIND_BLOCK_TEMPLATE {
 			expressionType := controlFlowType[0].Underlying()
@@ -754,7 +861,6 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 
 				errs = append(errs, err)
 			}
-
 		}
 
 	default:
@@ -763,6 +869,7 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 
 	// 4. Statements analysis
 	var statementType [2]types.Type
+	var localInferences InferenceFoundReturn
 
 	for _, statement := range node.Statements {
 		if statement == nil {
@@ -781,101 +888,171 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 		}
 
 		// Make DefinitionAnalysis for every children
-		statementType, localErrs = definitionAnalysisRecursive(statement, node, file, scopedGlobalVariables, localVariables)
+		statementType, localInferences, localErrs = definitionAnalysisRecursive(statement, node, file, scopedGlobalVariables, localVariables)
 		errs = append(errs, localErrs...)
+
+		inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, localInferences.variablesToRecheckAtEndOfScope...)
 
 		// TODO: is this code below really necessary ????
 		if statementType[1] == nil || types.Identical(statementType[1], TYPE_ERROR.Type()) {
 			continue
 		}
 
-		err := parser.NewParseError(&lexer.Token{}, errTypeMismatch)
+		err := parser.NewParseError(&lexer.Token{}, fmt.Errorf("%w, second return type must be an 'error' type", errTypeMismatch))
 		err.Range = statement.Range()
 		errs = append(errs, err)
 	}
 
 	// Verify that all 'localVariables' have been used at least once
 	for _, def := range localVariables {
+		otherDef := file.extraVariableNameWithTypeInferenceBehavior[def.name]
+		if otherDef == def {
+			delete(file.extraVariableNameWithTypeInferenceBehavior, def.name)
+		}
+
 		if def.IsUsedOnce {
 			continue
 		}
 
 		err := parser.NewParseError(&lexer.Token{}, errVariableNotUsed)
 		err.Range = def.Node().Range()
-
 		errs = append(errs, err)
 	}
 
 	// Implicitly guess the type of var '.' if no type is found (empty or 'any')
-	if node.IsGroupWithDollarAndDotVariableReset() || node.IsGroupWithDotVariableReset() {
-		// 1. Then we determine the final type using the implicit type system if needed
-		//
-		// What about '$'. It is nice and all to guess for '.', but what about '$' variable ?
+	if node.IsGroupWithDollarAndDotVariableReset() {
 		typ := guessVariableTypeFromImplicitType(localVariables["."])
 		localVariables["."].typ = typ
 
 		file.typeHints[node] = localVariables["."].typ
-	}
 
-	// Now Recheck simple implicit variable that were undertermined
-	for _, variableToRecheck := range file.variableToRecheckAtEndOfScope[node] {
-		varDef := variableToRecheck.varDef
-		symbol := variableToRecheck.symbol
-		constraintType := variableToRecheck.constraintType
-
-		log.Printf("--> recheck executed for '%s' :: symbol = '%s'\n", varDef.name, string(symbol.Value))
-
-		guessedType := guessVariableTypeFromImplicitType(varDef)
-		varDef.typ = guessedType
-
-		candidateType, err := getTypeOfDollarVariableWithinFile(symbol, varDef)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-
-		if variableToRecheck.strictTypeCheckEnabled {
-
-			_, errMsg := TypeCheckAgainstConstraint(candidateType, constraintType)
-			if errMsg != nil {
-				err := parser.NewParseError(symbol, errMsg)
-				errs = append(errs, err)
+		//
+		// Check Implicit Node for the end of this scope (type inference resolution)
+		//
+		for _, recheck := range inferences.variablesToRecheckAtEndOfScope {
+			if recheck == nil {
+				log.Printf("found unexpect <nil> amongs variable to recheck at end of scope"+
+					"\n node = %#v\n all vars to recheck = %#v\n", node, inferences.variablesToRecheckAtEndOfScope)
+				panic("found unexpect <nil> amongs variable to recheck at end of scope")
 			}
 
-			continue
+			// 1. Test that the whole token is valid, and build the root variable type
+			constraintDef := recheck.constraintDef
+			if constraintDef != nil {
+				constraintDef.typ = guessVariableTypeFromImplicitType(constraintDef)
+			}
+
+			candidateToken := recheck.candidateSymbol
+			candidateDef := recheck.candidateDef
+
+			// this is to make sure that the variable path exist, as defined by the variable type
+			candidateDef.typ = guessVariableTypeFromImplicitType(candidateDef)
+			_, err := getTypeOfDollarVariableWithinFile(candidateToken, candidateDef)
+
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+
+			// 2. Test that the implicit type tree is valid
+			candidateType := buildTypeFromTreeOfType(recheck.candidate)
+			constraintType := buildTypeFromTreeOfType(recheck.constraint)
+
+			switch recheck.operation {
+			case OPERATOR_STRICT_TYPE:
+				_, errMsg := TypeCheckAgainstConstraint(candidateType, constraintType)
+				if errMsg != nil {
+					err := parser.NewParseError(recheck.candidateSymbol, errMsg)
+					errs = append(errs, err)
+				}
+
+			case OPERATOR_COMPATIBLE_TYPE:
+				_, errMsg := TypeCheckCompatibilityWithConstraint(candidateType, constraintType)
+				if errMsg != nil {
+					err := parser.NewParseError(recheck.candidateSymbol, errMsg)
+					errs = append(errs, err)
+				}
+
+				// WIP
+			case OPERATOR_KEY_ITERABLE_TYPE:
+
+				exprTree := recheck.candidate
+				keyTree := recheck.constraint
+
+				if keyTree == nil {
+					panic("key implicit tree is <nil> while rechecking at end of scope (key of a loop)")
+				} else if exprTree == nil {
+					panic("expression inference tree is <nil> while rechecking at end of scope (expression of the loop)")
+				}
+
+				if !exprTree.isIterable { // no need to return an error while checking the key, since if the key is present, so is the value as well (we will check there)
+					continue
+				}
+
+				keyType := buildTypeFromTreeOfType(keyTree)
+
+				expectedKeyNode := exprTree.children["key"]
+				if expectedKeyNode == nil {
+					if types.Identical(keyType, types.Typ[types.Int]) { // sucess
+						continue
+					}
+
+					errMsg := fmt.Errorf("%w, expect 'int' but found %s", errTypeMismatch, keyType.String())
+					err := parser.NewParseError(recheck.constraintSymbol, errMsg)
+					errs = append(errs, err)
+					continue
+				}
+
+				expectedKeyType := buildTypeFromTreeOfType(expectedKeyNode)
+
+				_, errMsg := TypeCheckAgainstConstraint(keyType, expectedKeyType)
+				if errMsg != nil {
+					err := parser.NewParseError(recheck.constraintSymbol, errMsg)
+					errs = append(errs, err)
+				}
+
+			case OPERATOR_VALUE_ITERABLE_TYPE:
+
+				exprTree := recheck.candidate
+				valueTree := recheck.constraint
+
+				if valueTree == nil {
+					panic("value implicit tree is <nil> while rechecking at end of scope (key of a loop)")
+				} else if exprTree == nil {
+					panic("expression inference tree is <nil> while rechecking at end of scope (expression of the loop)")
+				}
+
+				if !exprTree.isIterable {
+					errMsg := fmt.Errorf("%w, expected array, slice, map, int, chan, or iterator", errTypeMismatch)
+					err := parser.NewParseError(recheck.candidateSymbol, errMsg)
+					errs = append(errs, err)
+					continue
+				}
+
+				valueType := buildTypeFromTreeOfType(valueTree)
+
+				expectedValueNode := exprTree.children["value"]
+				if expectedValueNode == nil {
+					log.Printf("found <nil> value within iterable 'value'.\n exprTree = %#v\n recheck = %#v\n", exprTree, recheck)
+					panic("found <nil> value within iterable 'value'")
+				}
+
+				expectedValueType := buildTypeFromTreeOfType(expectedValueNode)
+
+				_, errMsg := TypeCheckAgainstConstraint(valueType, expectedValueType)
+				if errMsg != nil {
+					err := parser.NewParseError(recheck.constraintSymbol, errMsg)
+					errs = append(errs, err)
+				}
+
+			default:
+				panic("found unknown operator while rechecking variable type at end of scope")
+			}
 		}
 
-		_, errMsg := TypeCheckCompatibilityWithConstraint(candidateType, constraintType)
-		if errMsg != nil {
-			err := parser.NewParseError(symbol, errMsg)
-			errs = append(errs, err)
-		}
-
-		log.Printf("\n\n---> template type check for symbol :: %s\n", string(symbol.Value))
-		log.Printf("candidateType = %s\n constraintType = %s\n errMsg = %s\n\n", candidateType, constraintType, err)
-	}
-
-	// Check Implicit Node for the end of this scope
-	for _, implicitNodeToRecheck := range file.implicitTypeNodeToRecheckAtEndOfScope[node] {
-		candidateType := buildTypeFromTreeOfType(implicitNodeToRecheck.candidate)
-		constraintType := buildTypeFromTreeOfType(implicitNodeToRecheck.constraint)
-
-		_, errMsg := TypeCheckAgainstConstraint(candidateType, constraintType)
-		if errMsg != nil {
-			err := parser.NewParseError(implicitNodeToRecheck.candidateSymbol, errMsg)
-			errs = append(errs, err)
-		}
-
-		candidateDef := implicitNodeToRecheck.candidateDef
-		constraintDef := implicitNodeToRecheck.constraintDef
-
-		if candidateDef != nil && types.Identical(candidateDef.typ, TYPE_ANY.Type()) {
-			candidateDef.typ = candidateType
-		}
-
-		if constraintDef != nil && types.Identical(constraintDef.typ, TYPE_ANY.Type()) {
-			constraintDef.typ = constraintType
-		}
+		// reset all inferences once resolved
+		inferences.uniqueVariableInExpression = nil
+		inferences.variablesToRecheckAtEndOfScope = nil
 	}
 
 	if localVariables["."] != nil {
@@ -885,10 +1062,10 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 	// save all local variables for the current scope; and set the type hint
 	file.scopeToVariables[node] = localVariables
 
-	return scopeType, errs
+	return scopeType, inferences, errs
 }
 
-func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if parent == nil {
 		panic("template cannot be parentless, it shoud be contain in at least 1 one scope")
 	}
@@ -899,13 +1076,11 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 
 	var errs, localErrs []lexer.Error
 	var expressionType [2]types.Type
-
-	// 0. Reset token identification for later recheck, if found
-	file.firstTokenVarExpressionToRecheck = nil
+	var inferences InferenceFoundReturn
 
 	// 1. Expression analysis, if any
 	if node.Expression != nil {
-		expressionType, localErrs = definitionAnalysisRecursive(node.Expression, parent, file, globalVariables, localVariables)
+		expressionType, inferences, localErrs = definitionAnalysisRecursive(node.Expression, parent, file, globalVariables, localVariables)
 		errs = append(errs, localErrs...)
 	}
 
@@ -924,7 +1099,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 			err := parser.NewParseError(node.TemplateName, errTemplateUndefined)
 			errs = append(errs, err)
 
-			return invalidTypes, errs
+			return invalidTypes, inferences, errs
 		}
 
 		if templateDef == nil {
@@ -942,21 +1117,31 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 
 		candidateType := expressionType[0]
 
-		if templateName == "tpl 1" {
-			log.Printf("---> templateName = %s\n candidateType = %s\n firstTokenVarExpressionToRecheck = %v\n", templateName, candidateType, file.firstTokenVarExpressionToRecheck)
-		}
-
+		// TODO: REMOVE comment below
 		// if expression == any type ;; then defer check to end of scope
-		if types.Identical(candidateType, TYPE_ANY.Type()) &&
-			file.firstTokenVarExpressionToRecheck != nil {
+		/*
+			if types.Identical(candidateType, TYPE_ANY.Type()) &&
+				file.firstTokenVarExpressionToRecheck != nil {
 
-			log.Printf("---> template type check deffered\n\n")
+				log.Printf("---> template type check deffered\n\n")
 
-			file.firstTokenVarExpressionToRecheck.constraintType = templateDef.inputType
-			file.firstTokenVarExpressionToRecheck.strictTypeCheckEnabled = false
+				file.firstTokenVarExpressionToRecheck.constraintType = templateDef.inputType
+				file.firstTokenVarExpressionToRecheck.strictTypeCheckEnabled = false
 
-			file.firstTokenVarExpressionToRecheck = nil
+				file.firstTokenVarExpressionToRecheck = nil
 
+				break
+			}
+		*/
+
+		if types.Identical(candidateType, TYPE_ANY.Type()) && inferences.uniqueVariableInExpression != nil {
+			rhs := inferences.uniqueVariableInExpression
+			templateTree := newNodeImplicitType(templateName, templateDef.inputType, node.Range())
+
+			recheck := newCollectionPostCheckImplicitTypeNode(rhs.candidate, templateTree, rhs.candidateDef, nil, rhs.candidateSymbol, nil)
+			recheck.operation = OPERATOR_COMPATIBLE_TYPE
+
+			inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, recheck)
 			break
 		}
 
@@ -966,7 +1151,7 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 			err.Range = node.Expression.Range()
 			errs = append(errs, err)
 
-			return invalidTypes, errs
+			return invalidTypes, inferences, errs
 		}
 
 	case parser.KIND_DEFINE_TEMPLATE, parser.KIND_BLOCK_TEMPLATE:
@@ -996,21 +1181,24 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 		panic("'TemplateStatementNode' do not accept any other type than 'KIND_DEFINE_TEMPLATE, KIND_BLOCK_TEMPLATE, KIND_USE_TEMPLATE'")
 	}
 
-	return expressionType, errs
+	return expressionType, inferences, errs
 }
 
 // WIP
 // TODO: refactor this function, too many ugly code in here
 // Only one 'go:code' allowed by files, the other one will be reported as error and discarded in the subsequent computation
 // During this phase 'file' argument is modified (file.Functions)
-func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.GroupStatementNode, file *FileDefinition, _, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.GroupStatementNode, file *FileDefinition, _, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
+
+	var inferences InferenceFoundReturn
+
 	commentType := [2]types.Type{
 		TYPE_ANY.Type(),
 		TYPE_ERROR.Type(),
 	}
 
 	if comment == nil {
-		return commentType, nil
+		return commentType, inferences, nil
 	}
 
 	if parentScope == nil {
@@ -1022,13 +1210,13 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 	}
 
 	if comment.GoCode == nil {
-		return commentType, nil
+		return commentType, inferences, nil
 	}
 
 	// Do not analyze orphaned 'GoCode'
 	// Correct 'GoCode' is available in parent scope
 	if comment != parentScope.ShortCut.CommentGoCode {
-		return commentType, nil
+		return commentType, inferences, nil
 	}
 
 	// 1. Find and store all functions and struct definitions
@@ -1088,7 +1276,7 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 			file.functions[function.Name()] = function
 
 			// DEBUG
-			log.Printf("go:code fun :: fn = %s ::: range = %s", function.Name(), function.Range())
+			// log.Printf("go:code fun :: fn = %s ::: range = %s", function.Name(), function.Range())
 
 		case *types.Named:
 
@@ -1126,6 +1314,7 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 			rootNode := newNodeImplicitType(obj.Name(), typ, localVariables["."].rng)
 			localVariables["."].TreeImplicitType = createImplicitTypeFromRealType(rootNode, convertGoAstPositionToProjectRange)
 
+			// TODO: should I remove the lines below ?? since localVariables["$"] ultimately point to 'localVariables["."]'
 			if localVariables["$"] == nil {
 				continue
 			}
@@ -1141,248 +1330,465 @@ func definitionAnalysisComment(comment *parser.CommentNode, parentScope *parser.
 	errs := convertThirdPartiesParseErrorToLocalError(err, errsType, file, comment, virtualHeader)
 	errs = append(errs, errComments...)
 
-	return commentType, errs
+	return commentType, inferences, errs
 }
 
-func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode, parentScope *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisVariableDeclaration(node *parser.VariableDeclarationNode, parentScope *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if parentScope == nil {
 		panic("'variable declaration' cannot be parentless, it shoud be contain in at least 1 one scope")
-	}
-
-	if node.Kind() != parser.KIND_VARIABLE_DECLARATION {
+	} else if node.Kind() != parser.KIND_VARIABLE_DECLARATION {
+		log.Printf("found value mismatch for 'VariableDeclarationNode.Kind' during DefinitionAnalysis()"+"\n node = %#v\n parent = %#v\n", node, parentScope)
 		panic("found value mismatch for 'VariableDeclarationNode.Kind' during DefinitionAnalysis()")
-	}
-
-	if localVariables == nil {
-		panic("'localVariables' shouldn't be nil for 'VariableDeclarationNode.DefinitionAnalysis()'")
+	} else if localVariables == nil || globalVariables == nil {
+		log.Printf("either 'localVariables' or 'globalVariables' shouldn't be nil for 'VariableDeclarationNode.DefinitionAnalysis()'"+"\n localVariables = %#v\n globalVariables = %#v\n", localVariables, globalVariables)
+		panic("either 'localVariables' or 'globalVariables' shouldn't be nil for 'VariableDeclarationNode.DefinitionAnalysis()'")
+	} else if len(node.VariableNames) == 0 && len(node.VariableNames) > 2 {
+		log.Printf("cannot analyze variable declaration with 0 or more than 2 variable. this error must be caught and discarded while parsing"+"\n node = %#v\n", node)
+		panic("cannot analyze variable declaration with 0 or more than 2 variable. this error must be caught and discarded while parsing")
 	}
 
 	var errs []lexer.Error
 	var expressionType [2]types.Type
-
+	var localInferences InferenceFoundReturn
 	invalidTypes := [2]types.Type{
 		types.Typ[types.Invalid],
 		TYPE_ERROR.Type(),
 	}
 
-	// TODO: disally reassignment of '$' and '.' ---> I think it is already implicitly done though
+	// 0. Check that variable names have proper syntax
+	for _, variable := range node.VariableNames {
+		if bytes.ContainsAny(variable.Value, ".") {
+			err := parser.NewParseError(variable, errors.New("forbidden '.' in variable name while declaring"))
+			errs = append(errs, err)
 
-	// 0. Check that 'expression' is valid
+			return invalidTypes, localInferences, errs
+		}
+	}
+
+	// 1. Check that 'expression' is valid
 	if node.Value != nil {
 		var localErrs []lexer.Error
 
-		file.firstTokenVarExpressionToRecheck = nil
-
-		expressionType, localErrs = definitionAnalysisMultiExpression(node.Value, parentScope, file, globalVariables, localVariables)
-
+		expressionType, localInferences, localErrs = definitionAnalysisMultiExpression(node.Value, parentScope, file, globalVariables, localVariables)
 		errs = append(errs, localErrs...)
+
 	} else {
 		localErr := parser.NewParseError(&lexer.Token{}, errors.New("assignment expression cannot be empty"))
 		localErr.Range = node.Range()
 		errs = append(errs, localErr)
+
+		return invalidTypes, localInferences, errs
 	}
 
-	// 1. Check at least var is declared
-	variableSize := len(node.VariableNames)
-	if variableSize == 0 {
-		errLocal := parser.ParseError{Err: errors.New("variable name is empty for the declaration"), Range: node.Range()}
-		errs = append(errs, errLocal)
+	// All the code blow suppose that:   len(node.VariableNames) > 0 && len(node.VariableNames) <= 2
+	if parentScope.Kind() == parser.KIND_RANGE_LOOP {
+		computedExpressionType := expressionType[0]
 
-		return invalidTypes, errs
-	} else if variableSize > 2 {
-		err := parser.NewParseError(node.VariableNames[0],
-			errors.New("can't have more than 2 variables declaration on same statement"))
+		if types.Identical(computedExpressionType, TYPE_ANY.Type()) && localInferences.uniqueVariableInExpression != nil {
+			rhs := localInferences.uniqueVariableInExpression
 
-		err.Range.End = node.VariableNames[variableSize-1].Range.End
-		errs = append(errs, err)
-
-		return invalidTypes, errs
-	}
-
-	// 2. Check existance of variable and process without error if 'var' is unique
-	for count, variable := range node.VariableNames {
-		if bytes.ContainsAny(variable.Value, ".") {
-			err := parser.NewParseError(variable,
-				errors.New("forbidden '.' in variable name while declaring"))
-
-			errs = append(errs, err)
-			continue
+			exprTree := extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol)
+			computedExpressionType = exprTree.fieldType
+			// TODO: What about the possibility of 'exprTree.toDiscard == true' ???
 		}
 
-		// Check if this variable name exist in the current scope. No need to check for function since 'var' always start with $
-		key := string(variable.Value)
-
-		if _, found := localVariables[key]; found {
-			err := parser.NewParseError(variable, errVariableRedeclaration)
+		key, val, errMsg := getKeyAndValueTypeFromIterableType(computedExpressionType) // important
+		if errMsg != nil {
+			err := parser.NewParseError(&lexer.Token{}, errMsg)
+			err.Range = node.Value.Range()
 			errs = append(errs, err)
-
-			continue
 		}
 
-		// 2. Insert definition into dictionary, since there is no error whether the variable is already declared or not
-		def := NewVariableDefinition(key, node, parentScope, file.Name())
+		if types.Identical(key, types.Typ[types.Invalid]) && len(node.VariableNames) == 2 {
+			err := parser.NewParseError(node.VariableNames[0], fmt.Errorf("'%s' type do not accept key", computedExpressionType))
+			errs = append(errs, err)
+		}
 
-		// TODO: bring back enumeration to this file, other file is deprecated
+		loneVariableInExpression := localInferences.uniqueVariableInExpression
+		localInferences.uniqueVariableInExpression = nil
 
-		// TODO: Double variable declaration only work with "range" keyword,
-		// so later take it into consideration
+		var keyDefinition, valueDefinition *VariableDefinition
+		firstPass := true
 
-		def.typ = expressionType[count] // TODO: this code is so wrong
-		def.rng.Start = variable.Range.Start
+		for index := len(node.VariableNames) - 1; index >= 0; index-- {
+			variable := node.VariableNames[index]
+			variableName := string(variable.Value)
 
-		localVariables[key] = def
+			if _, found := localVariables[variableName]; found {
+				err := parser.NewParseError(variable, errVariableRedeclaration)
+				errs = append(errs, err)
 
-		if types.Identical(def.typ, TYPE_ANY.Type()) &&
-			file.firstTokenVarExpressionToRecheck != nil {
-
-			def.TreeImplicitType = extractOrInsertTemporaryImplicitTypeFromVariable(file.firstTokenVarExpressionToRecheck.varDef, file.firstTokenVarExpressionToRecheck.symbol)
-
-			log.Printf("---> var declaration implicit type\n\n")
-			log.Printf("variable = %s\n var typ = %s\n", def.name, def.typ)
-			if def.TreeImplicitType != nil {
-				log.Printf("implicit type = %s\n", def.TreeImplicitType.fieldType)
+				continue
 			}
 
-			// Check this variable instead of its expression
-			file.firstTokenVarExpressionToRecheck.varDef = def
-			file.firstTokenVarExpressionToRecheck.symbol = variable
-			file.firstTokenVarExpressionToRecheck.constraintType = TYPE_ANY.Type() // to enable type implict analysis
-			file.firstTokenVarExpressionToRecheck.strictTypeCheckEnabled = true
+			def := NewVariableDefinition(variableName, node, parentScope, file.Name())
+			def.rng.Start = variable.Range.Start
+			def.typ = key
 
-			file.firstTokenVarExpressionToRecheck = nil
+			localVariables[variableName] = def
+
+			varName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+			fakeTree := newNodeImplicitType(varName, TYPE_ANY.Type(), variable.Range)
+			recheck := newCollectionPostCheckImplicitTypeNode(fakeTree, fakeTree, def, nil, variable, nil)
+
+			localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck) // enable computation of real type at end of scope
+
+			if firstPass { // in this case, we are certain that it is the 'value' variable instead of anything else ('key' for insteance)
+				firstPass = false
+
+				localInferences.uniqueVariableInExpression = recheck // used by parent scope to assign to '.' var
+
+				valueDefinition = def
+				def.typ = val
+
+				continue
+			}
+
+			keyDefinition = def
+			file.secondaryVariable = def
 		}
+
+		// type inference of the loop expression variable to be completed latter (arr, slice, map, ...)
+		if types.Identical(computedExpressionType, TYPE_ANY.Type()) && loneVariableInExpression != nil &&
+			types.Identical(loneVariableInExpression.candidateDef.typ, TYPE_ANY.Type()) { // this condition is to make sure that the tree is still modifiable (type any)
+
+			rhs := loneVariableInExpression
+			implicitNode := extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol) // TODO: this might be a problem for '$' var because it will allow type inference on it, which is strictly forbidden
+
+			err := insertIterableIntoImplicitTypeNode(implicitNode, keyDefinition, valueDefinition)
+			if err != nil {
+				err.Token = rhs.candidateSymbol
+				err.Range = rhs.candidateSymbol.Range
+				errs = append(errs, err)
+			}
+
+		} else if types.Identical(computedExpressionType, TYPE_ANY.Type()) { // cannot make type inference
+			err := parser.NewParseError(&lexer.Token{}, errDefeatedTypeSystem)
+			err.Range = node.Value.Range()
+
+			errs = append(errs, err)
+		}
+
+		return expressionType, localInferences, errs
 	}
 
-	file.firstTokenVarExpressionToRecheck = nil
+	// else, simple variable declaration
+	//
+	if len(node.VariableNames) > 1 {
+		localErr := parser.NewParseError(node.VariableNames[1], errors.New("only 'range' loop can declare 2 variables at once"))
+		errs = append(errs, localErr)
 
-	return expressionType, errs
+		return invalidTypes, localInferences, errs
+	}
+
+	// simple var declaration check (only 1 variable at a time)
+	variable := node.VariableNames[0]
+	variableName := string(variable.Value)
+
+	if _, found := localVariables[variableName]; found {
+		err := parser.NewParseError(variable, errVariableRedeclaration)
+		errs = append(errs, err)
+
+		return invalidTypes, localInferences, errs
+	}
+
+	def := NewVariableDefinition(variableName, node, parentScope, file.Name())
+	def.rng.Start = variable.Range.Start
+	def.typ = expressionType[0]
+
+	localVariables[variableName] = def
+
+	// Handle the case when an expression come with an 'inferred type tree'
+	// So that at inference type resolution, both variable share the same type
+	if types.Identical(def.typ, TYPE_ANY.Type()) && localInferences.uniqueVariableInExpression != nil {
+		rhs := localInferences.uniqueVariableInExpression
+		def.TreeImplicitType = extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol) // to track type of the source variable
+
+		varName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+		fakeTree := newNodeImplicitType(varName, TYPE_ANY.Type(), variable.Range)
+
+		// this recheck will always to be true, since they share the same inferred type
+		// so, the goal is to enable type inference resolution on the variable at end of scope, not type check per sey
+		recheck := newCollectionPostCheckImplicitTypeNode(fakeTree, fakeTree, def, nil, variable, nil)
+		localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck)
+	}
+
+	return expressionType, localInferences, errs
 }
 
-func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
-	if node.Kind() != parser.KIND_VARIABLE_ASSIGNMENT {
+func definitionAnalysisVariableAssignment(node *parser.VariableAssignationNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
+	if parent == nil {
+		panic("'variable declaration' cannot be parentless, it shoud be contain in at least 1 one scope")
+	} else if node.Kind() != parser.KIND_VARIABLE_ASSIGNMENT {
 		panic("found value mismatch for 'VariableAssignationNode.Kind' during DefinitionAnalysis()\n" + node.String())
-	}
-
-	if globalVariables == nil || localVariables == nil {
+	} else if globalVariables == nil || localVariables == nil {
 		panic("'localVariables' or 'globalVariables' shouldn't be empty for 'VariableAssignationNode.DefinitionAnalysis()'")
+	} else if len(node.VariableNames) == 0 && len(node.VariableNames) > 2 {
+		log.Printf("cannot analyze variable declaration with 0 or more than 2 variable. this error must be caught and discarded while parsing"+"\n node = %#v\n", node)
+		panic("cannot analyze variable declaration with 0 or more than 2 variable. this error must be caught and discarded while parsing")
 	}
 
 	var errs []lexer.Error
-	var assignmentType [2]types.Type
-
+	var assignmentType, expressionType [2]types.Type
+	var localInferences InferenceFoundReturn
 	invalidTypes := [2]types.Type{
 		types.Typ[types.Invalid],
 		TYPE_ERROR.Type(),
 	}
 
-	// TODO: disallow assignment to var '$' and '.'
+	// 0. Check that variable names have proper syntax
+	for _, variable := range node.VariableNames {
+		if bytes.ContainsAny(variable.Value, ".") {
+			err := parser.NewParseError(variable, errors.New("forbidden '.' in variable name while declaring"))
+			errs = append(errs, err)
 
-	// 0. Check that 'expression' is valid
-	if node.Value == nil {
+			return invalidTypes, localInferences, errs
+		}
+	}
+
+	// 1. Check that 'expression' is valid
+	if node.Value != nil {
+		var localErrs []lexer.Error
+
+		expressionType, localInferences, localErrs = definitionAnalysisMultiExpression(node.Value, parent, file, globalVariables, localVariables)
+		errs = append(errs, localErrs...)
+
+	} else {
 		errLocal := parser.NewParseError(nil, errors.New("assignment value cannot be empty"))
 		errLocal.Range = node.Range()
 		errs = append(errs, errLocal)
 
-		return invalidTypes, errs
+		return invalidTypes, localInferences, errs
 	}
 
-	expressionType, localErrs := definitionAnalysisMultiExpression(node.Value, parent, file, globalVariables, localVariables)
-	errs = append(errs, localErrs...)
+	// TODO: disallow assignment to var '$' and '.'
 
-	// 1. Check at least var is declared
-	if node.VariableName == nil {
-		err := fmt.Errorf("%w. syntax should be 'variable = value'", errEmptyVariableName)
-		errLocal := parser.ParseError{Err: err, Range: node.Range()}
-		errLocal.Range = node.Range()
+	// 2. variable within for loop
+	if parent.Kind() == parser.KIND_RANGE_LOOP {
+		computedExpressionType := expressionType[0]
 
-		errs = append(errs, errLocal)
-		return expressionType, errs
+		if types.Identical(computedExpressionType, TYPE_ANY.Type()) && localInferences.uniqueVariableInExpression != nil {
+			rhs := localInferences.uniqueVariableInExpression
+
+			exprTree := extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol)
+
+			// computedExpressionType = exprTree.fieldType
+			computedExpressionType = buildTypeFromTreeOfType(exprTree) // cannot return 'invalid type'
+		}
+
+		key, _, errMsg := getKeyAndValueTypeFromIterableType(computedExpressionType) // important
+		if errMsg != nil {
+			err := parser.NewParseError(&lexer.Token{}, errMsg)
+			err.Range = node.Value.Range()
+			errs = append(errs, err)
+		}
+
+		if types.Identical(key, types.Typ[types.Invalid]) && len(node.VariableNames) == 2 {
+			err := parser.NewParseError(node.VariableNames[0], fmt.Errorf("'%s' type do not accept key", computedExpressionType))
+			errs = append(errs, err)
+		}
+
+		loneVariableInExpression := localInferences.uniqueVariableInExpression
+		localInferences.uniqueVariableInExpression = nil
+
+		var keyDefinition, valueDefinition *VariableDefinition
+		var keyToken, valueToken *lexer.Token
+		firstPass := true
+
+		for index := len(node.VariableNames) - 1; index >= 0; index-- {
+			variable := node.VariableNames[index]
+
+			def := getVariableDefinitionForRootField(variable, localVariables, globalVariables)
+			if def == nil {
+				err := parser.NewParseError(variable, errVariableUndefined)
+				errs = append(errs, err)
+
+				continue
+			}
+
+			varName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+			fakeTree := newNodeImplicitType(varName, TYPE_ANY.Type(), variable.Range)
+			recheck := newCollectionPostCheckImplicitTypeNode(fakeTree, fakeTree, def, nil, variable, nil)
+
+			localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck) // enable computation of real type at end of scope
+
+			if firstPass { // in this case, we are certain that it is the 'value' variable instead of anything else ('key' for insteance)
+				firstPass = false
+
+				valueToken = variable
+				// valueDefinition = def
+
+				// this below is safe, since either 'def.typ != any_type' or 'def.TreeImplicitType' is set to an existing node (bc of previous declaration)
+				// Variable declaration is always either :
+				// a) set to concrete type (def.typ != any_type)
+				// b) or set to a tree node comming from the expression (during declaration)
+				// c) all in all, the 2 above are always true because declaration can only happen on '$' var; and '$' var have no type inference as well
+				// Because of this rule, the operation below is safe
+				valueDefinition = cloneVariableDefinition(def)
+				valueDefinition.rng = variable.Range
+				recheck.candidateDef = valueDefinition
+
+				localInferences.uniqueVariableInExpression = recheck // used by parent scope to assign to '.' var
+
+				continue
+			}
+
+			keyToken = variable
+			keyDefinition = def
+
+			file.secondaryVariable = def
+		}
+
+		// type inference of the loop expression variable to be completed latter (arr, slice, map, ...)
+		// TODO: move this inside 'if firstPass'
+		if types.Identical(computedExpressionType, TYPE_ANY.Type()) && loneVariableInExpression == nil { // cannot make type inference
+			err := parser.NewParseError(&lexer.Token{}, errDefeatedTypeSystem)
+			err.Range = node.Value.Range()
+
+			errs = append(errs, err)
+		}
+
+		//
+		// for all other case, type check at the end of root scope
+		//
+		rhs := loneVariableInExpression
+
+		var exprTree *nodeImplicitType
+		var exprDef *VariableDefinition
+		var exprSymbol *lexer.Token
+
+		// setup phase for 'keyDefinition' and 'valueDefinition' evaluation
+		if loneVariableInExpression != nil {
+			exprTree = extractOrInsertTemporaryImplicitTypeFromVariable(rhs.candidateDef, rhs.candidateSymbol)
+			exprDef = rhs.candidateDef
+			exprSymbol = rhs.candidateSymbol
+		}
+		if exprTree == nil {
+			exprTree = newNodeImplicitType("$_fake_root", computedExpressionType, node.Value.Range())
+		}
+		if exprDef == nil {
+			varFakeName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+			exprDef = NewVariableDefinition(varFakeName, node.Value, parent, file.FileName())
+			exprDef.typ = computedExpressionType
+			exprSymbol = lexer.NewToken(lexer.DOLLAR_VARIABLE, node.Range(), []byte("$_fake_expr_variable"))
+		}
+
+		// Recheck 'key' var and 'expr' iterable key type, when available
+		if keyDefinition != nil {
+			keyTree := keyDefinition.TreeImplicitType
+			if keyTree == nil {
+				keyTree = newNodeImplicitType("$_fake_root", keyDefinition.typ, node.VariableNames[0].Range)
+			}
+
+			recheck := newCollectionPostCheckImplicitTypeNode(exprTree, keyTree, exprDef, keyDefinition, exprSymbol, keyToken)
+			recheck.operation = OPERATOR_KEY_ITERABLE_TYPE
+
+			localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck)
+		}
+
+		// Recheck 'value' var and 'expr' iterable value type
+		if valueDefinition != nil {
+			valueTree := valueDefinition.TreeImplicitType
+			if valueTree == nil {
+				valueTree = newNodeImplicitType("$_fake_root", valueDefinition.typ, node.VariableNames[len(node.VariableNames)-1].Range)
+			}
+
+			recheck := newCollectionPostCheckImplicitTypeNode(exprTree, valueTree, exprDef, valueDefinition, exprSymbol, valueToken)
+			recheck.operation = OPERATOR_VALUE_ITERABLE_TYPE
+
+			localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck)
+		}
+
+		return expressionType, localInferences, errs
 	}
 
-	if bytes.ContainsAny(node.VariableName.Value, ".") {
-		err := parser.NewParseError(node.VariableName,
-			errors.New("forbidden '.' in variable name while assigning"))
+	// 3. only one variable, and not within for loop
+	if len(node.VariableNames) > 1 {
+		localErr := parser.NewParseError(node.VariableNames[1], errors.New("only 'range' loop can declare 2 variables at once"))
+		errs = append(errs, localErr)
 
+		return invalidTypes, localInferences, errs
+	}
+
+	variable := node.VariableNames[0]
+	def := getVariableDefinitionForRootField(variable, localVariables, globalVariables)
+	if def == nil {
+		err := parser.NewParseError(variable, errVariableUndefined)
 		errs = append(errs, err)
-		return expressionType, errs
-	}
 
-	// 2. Check if variable is defined, if not report error
-	name := string(node.VariableName.Value)
-	defLocal, isLocal := localVariables[name]
-	defGlobal, isGlobal := globalVariables[name]
-
-	var def *VariableDefinition
-
-	if isLocal {
-		def = defLocal
-	} else if isGlobal {
-		def = defGlobal
-	} else {
-		err := parser.NewParseError(node.VariableName, errVariableUndefined)
-		err.Range.End.Character = err.Range.Start.Character + len(name)
-		errs = append(errs, err)
-
-		return invalidTypes, errs
+		return invalidTypes, localInferences, errs
 	}
 
 	assignmentType[0] = def.typ
 	assignmentType[1] = expressionType[1]
 
-	// 3.a if var.implicitNode != nil
-	if def.TreeImplicitType != nil {
-		constraintNode := def.TreeImplicitType
-		constraintToken := node.VariableName
+	// Whenever implicit type are found for either 'var' or 'expr'
+	// simply, recheck the type later at end of root scope
+	if types.Identical(expressionType[0], TYPE_ANY.Type()) && localInferences.uniqueVariableInExpression != nil ||
+		types.Identical(def.typ, TYPE_ANY.Type()) && def.TreeImplicitType != nil {
 
-		candidateNode := newNodeImplicitType("$__TMP_VAR_TO_RECHECK", expressionType[0], node.Value.Range())
-		candidateToken := lexer.NewToken(lexer.DOLLAR_VARIABLE, node.Value.Range(), []byte("$__TMP_VAR_TO_RECHECK"))
-
-		if file.firstTokenVarExpressionToRecheck != nil && types.Identical(expressionType[0], TYPE_ANY.Type()) {
-			candidateNode = file.firstTokenVarExpressionToRecheck.varDef.TreeImplicitType
-			candidateToken = file.firstTokenVarExpressionToRecheck.symbol
+		variableTree := def.TreeImplicitType
+		if variableTree == nil {
+			variableTree = newNodeImplicitType("$_temporary_variable", def.typ, def.Range())
 		}
 
-		collectionToRecheck := newCollectionPostCheckImplicitTypeNode(candidateNode, constraintNode, nil, def, candidateToken, constraintToken)
+		var exprTree *nodeImplicitType
+		var exprSymbol *lexer.Token
+		var exprDef *VariableDefinition
 
-		parent := file.root
-		file.implicitTypeNodeToRecheckAtEndOfScope[parent] = append(file.implicitTypeNodeToRecheckAtEndOfScope[parent], collectionToRecheck)
-		file.firstTokenVarExpressionToRecheck = nil
+		rhs := localInferences.uniqueVariableInExpression
+		if rhs != nil {
+			exprTree = rhs.candidate
+			exprSymbol = rhs.candidateSymbol
+			exprDef = rhs.candidateDef
+		} else {
+			exprTree = newNodeImplicitType("$_temporary_var_expr", expressionType[0], node.Value.Range())
+			exprSymbol = lexer.NewToken(lexer.DOLLAR_VARIABLE, node.Value.Range(), []byte(exprTree.fieldName))
+			exprDef = NewVariableDefinition(string(exprSymbol.Value), node, parent, file.FileName())
+		}
 
-		return assignmentType, errs
+		recheck := newCollectionPostCheckImplicitTypeNode(exprTree, variableTree, exprDef, def, exprSymbol, variable)
+
+		// recheck := newCollectionPostCheckImplicitTypeNode(variableTree, exprTree, def, nil, variable, nil)
+		localInferences.variablesToRecheckAtEndOfScope = append(localInferences.variablesToRecheckAtEndOfScope, recheck)
+
+		return assignmentType, localInferences, errs
 	}
 
-	// 3.b if var.implicitNode == nil && expr.implicitNode != nil
-	if types.Identical(expressionType[0], TYPE_ANY.Type()) && file.firstTokenVarExpressionToRecheck != nil {
-		file.firstTokenVarExpressionToRecheck.constraintType = def.typ
-		file.firstTokenVarExpressionToRecheck = nil
+	// TODO: where is this code supposed to go ?????
+	/*
+		if types.Identical(def.typ, TYPE_ANY.Type()) && def.TreeImplicitType == nil {
+			// this should never happens because inferences computation need 'def.TreeImplicitType != nil'
+			// otherwise nothing will work, and nasty bug can propagate everywhere
+			// resolve that inference issue at variable 'declaration'
+			log.Printf("no inference type node found for variable with unknown type (any_type)"+"\n def = %#v\n expr = %#v\n", def, node.Value)
+			panic("no inference type node found for variable with unknown type (any_type)")
+		}
+	*/
 
-		return assignmentType, errs
-	}
-
-	// 3.c else
-	// (var.implicitNode == nil && expr.implicitNode == nil)
 	_, localErr := TypeCheckAgainstConstraint(expressionType[0], def.typ)
 	if localErr != nil {
 		errMsg := fmt.Errorf("%w, between var '%s' and expr '%s'", errTypeMismatch, def.Type(), expressionType[0])
-		err := parser.NewParseError(node.VariableName, errMsg)
+		err := parser.NewParseError(variable, errMsg)
 		errs = append(errs, err)
-
-		return invalidTypes, errs
 	}
 
-	return assignmentType, errs
+	return assignmentType, localInferences, errs
 }
 
-func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if node.Kind() != parser.KIND_MULTI_EXPRESSION {
 		panic("found value mismatch for 'MultiExpressionNode.Kind' during DefinitionAnalysis()\n" + node.String())
 	}
 
 	var errs, localErrs []lexer.Error
-	var expressionType [2]types.Type
-	var count int = 0
+	var inferences, localInferences InferenceFoundReturn
+	expressionType := [2]types.Type{
+		types.Typ[types.Invalid],
+		TYPE_ERROR.Type(),
+	}
 
-	for _, expression := range node.Expressions {
+	for count, expression := range node.Expressions {
 		if expression == nil {
 			log.Printf("fatal, nil element within expression list for MultiExpressionNode. \n %s \n", node.String())
 			panic("element within expression list cannot be 'nil' for MultiExpressionNode. instead of inserting the nil value, omit it")
@@ -1390,59 +1796,50 @@ func definitionAnalysisMultiExpression(node *parser.MultiExpressionNode, parent 
 
 		// normal processing when this is the first expression
 		if count == 0 {
-			expressionType, localErrs = definitionAnalysisExpression(expression, parent, file, globalVariables, localVariables)
-			errs = append(errs, localErrs...)
+			expressionType, localInferences, localErrs = definitionAnalysisExpression(expression, parent, file, globalVariables, localVariables)
 
-			// TODO: replace 'count' variable with a var of bool type (eg. isFirstExpression)
-			count++
+			errs = append(errs, localErrs...)
+			inferences = localInferences
+
 			continue
 		}
 
 		// when piping, you pass the result of the previous expression to the end position of the current expression
 		//
 		// create a token group and insert it to the end of the expression
-		groupName := "$__TMP_GROUP"
+		groupName := NAME_TEMPORARY_VAR + "_GROUP_" + strconv.Itoa(getUniqueNumber())
 
 		tokenGroup := &lexer.Token{ID: lexer.GROUP, Value: []byte(groupName), Range: expression.Range()}
 		expression.Symbols = append(expression.Symbols, tokenGroup)
 
-		// TODO: Introduce the concept of reserved variable name
-		// In my case, variable that start with "$__" are reserved for parser internal use
-
 		// then insert that token as variable within the file
 		def := NewVariableDefinition(groupName, nil, parent, file.Name())
 		def.rng = tokenGroup.Range
-		def.IsValid = true
 
 		def.typ = expressionType[0]
-		// TODO: bring back enumeration to this file, other file is deprecated
+		if localInferences.uniqueVariableInExpression != nil {
+			def.TreeImplicitType = localInferences.uniqueVariableInExpression.candidate
+		}
 
-		// file.ScopeToVariables[parent] = append(file.ScopeToVariables[parent], def)
 		localVariables[def.Name()] = def
 
-		expressionType, localErrs = definitionAnalysisExpression(expression, parent, file, globalVariables, localVariables)
+		expressionType, localInferences, localErrs = definitionAnalysisExpression(expression, parent, file, globalVariables, localVariables)
+
 		errs = append(errs, localErrs...)
+		inferences.uniqueVariableInExpression = localInferences.uniqueVariableInExpression
+		inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, localInferences.variablesToRecheckAtEndOfScope...)
 
 		// once, processing is over, remove the group created from the expression
 		size := len(expression.Symbols)
 		expression.Symbols = expression.Symbols[:size-1]
 
-		// remove temporary variable definition from file
-		// TODO: do as stated above, and do a proper lookup
-		// size = len(file.ScopeToVariables[parent])
-		// defToRemove := file.ScopeToVariables[parent][size - 1]
-
 		delete(localVariables, def.Name())
-		// file.ScopeToVariables[parent] = file.ScopeToVariables[parent][:size - 1] // this is not good, nothing garanty that 'def' will this be at the end. look for it propertly
-
-		// never forget about this one
-		count++
 	}
 
-	return expressionType, errs
+	return expressionType, inferences, errs
 }
 
-func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.GroupStatementNode, file *FileDefinition, globalVariables, localVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	if node.Kind() != parser.KIND_EXPRESSION {
 		panic("found value mismatch for 'ExpressionNode.Kind'. expected 'KIND_EXPRESSION' instead. current node \n" + node.String())
 	}
@@ -1453,35 +1850,43 @@ func definitionAnalysisExpression(node *parser.ExpressionNode, parent *parser.Gr
 
 	var expressionType [2]types.Type = [2]types.Type{types.Typ[types.Invalid], TYPE_ERROR.Type()}
 	var errs []lexer.Error
+	inferences := InferenceFoundReturn{}
 
 	if len(node.Symbols) == 0 {
 		err := parser.NewParseError(nil, errEmptyExpression)
 		err.Range = node.Range()
 		errs = append(errs, err)
 
-		return expressionType, errs
+		return expressionType, inferences, errs
 	}
 
 	defChecker := NewDefinitionAnalyzer(node.Symbols, parent, file, node.Range())
-	expressionType, errs = defChecker.makeSymboleDefinitionAnalysis(localVariables, globalVariables)
+	expressionType, inferences, errs = defChecker.makeSymboleDefinitionAnalysis(localVariables, globalVariables)
+	if expressionType[0] == nil {
+		log.Printf("found a <nil> return type for expression"+"\n file = %#v\n node = %#v\n inferences = %#v\n", file, node, inferences)
+		panic("found a <nil> return type for expression")
+	}
 
+	// TODO: to remove
 	// Insert dollar variable to recheck (because of implicit type not completed)
 	// into a special data structure so that the appropriate parent will check it
-	defChecker.setupVariableForLaterRecheck()
+	//
+	// defChecker.setupVariableForLaterRecheck()
 
-	return expressionType, errs
+	return expressionType, inferences, errs
 }
 
 // first make definition analysis to find all existing reference
 // then make the type analysis
 type definitionAnalyzer struct {
-	symbols                       []*lexer.Token
-	index                         int
-	isEOF                         bool
-	parent                        *parser.GroupStatementNode
-	file                          *FileDefinition
-	rangeExpression               lexer.Range
-	variableToRecheckAtEndOfScope []*collectionPostCheckVariable
+	symbols         []*lexer.Token
+	index           int
+	isEOF           bool
+	parent          *parser.GroupStatementNode
+	file            *FileDefinition
+	rangeExpression lexer.Range
+	// variableToRecheckAtEndOfScope []*collectionPostCheckVariable
+	// variableToRecheckAtEndOfScope []*collectionPostCheckImplicitTypeNode
 }
 
 func NewDefinitionAnalyzer(symbols []*lexer.Token, parent *parser.GroupStatementNode, file *FileDefinition, rangeExpr lexer.Range) *definitionAnalyzer {
@@ -1538,6 +1943,7 @@ func (a definitionAnalyzer) isTokenAvailable() bool {
 	return a.index < len(a.symbols)
 }
 
+/*
 func (a definitionAnalyzer) setupVariableForLaterRecheck() {
 	parent := a.file.root
 
@@ -1546,84 +1952,31 @@ func (a definitionAnalyzer) setupVariableForLaterRecheck() {
 			append(a.file.variableToRecheckAtEndOfScope[parent], recheck)
 	}
 }
+*/
 
 // fetch all tokens and sort them
-func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globalVariables map[string]*VariableDefinition) ([2]types.Type, []lexer.Error) {
+func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globalVariables map[string]*VariableDefinition) ([2]types.Type, InferenceFoundReturn, []lexer.Error) {
 	var errs []lexer.Error
 	var err *parser.ParseError
+	lateVariableRecheck := InferenceFoundReturn{}
 
 	listOfUsedFunctions := map[string]*FunctionDefinition{}
 	processedToken := []*lexer.Token{}
 	processedTypes := []types.Type{}
 
-	// TODO: should I break it into 2 functions ?? (1 normal func & 1 anonymous func)
-	makeTypeInference := func(symbol *lexer.Token, symbolType, constraintType types.Type) *parser.ParseError {
-		if types.Identical(constraintType, TYPE_ANY.Type()) { // no type inference to make here
-			return nil
-		}
-
-		// This shouldn't be executed, since 'makeTypeInference()' (this function) is only called
-		// by 'makeTypeCheckOnSymbolForFunction()' whenever the argument type is == any
-		// this 'symbolType' of this function == any
-		if !types.Identical(symbolType, TYPE_ANY.Type()) { // if type != ANY_TYPE
-			// TODO: remove the code below and panic instead ????
-			_, errMsg := TypeCheckAgainstConstraint(symbolType, constraintType)
-			if errMsg != nil {
-				err := parser.NewParseError(symbol, errMsg)
-
-				return err
-			}
-
-			return nil
-		}
-
-		switch symbol.ID {
-		case lexer.DOLLAR_VARIABLE, lexer.DOT_VARIABLE:
-			// do nothing
-		default:
-			_, errMsg := TypeCheckAgainstConstraint(symbolType, constraintType)
-			if errMsg != nil {
-				err := parser.NewParseError(symbol, errMsg)
-
-				return err
-			}
-
-			return nil
-		}
-
-		// If we reach here, that mean one thing
-		// symbolType == ANY_TYPE && constraintType != ANY_TYPE
-		//
-		// In that case, do type inference implicitly, if '.' var but disallow '$' var
-
-		varDef := getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
-		if varDef == nil {
-			err = parser.NewParseError(symbol, errVariableUndefined)
-			return err
-		}
-		//markVariableAsUsed(varDef)
-
-		if symbol.ID == lexer.DOLLAR_VARIABLE {
-			recheck := newCollectionPostCheckVariable(varDef, symbol, constraintType)
-
-			p.variableToRecheckAtEndOfScope = append(p.variableToRecheckAtEndOfScope, recheck)
-
-			return nil
-		}
-
-		// else 'lexer.DOT_VARIABLE'
-		symbolType, err = updateVariableImplicitType(varDef, symbol, constraintType)
-		if err != nil {
-			return err
-		}
-
-		return nil
+	makeTypeInference := func(symbol *lexer.Token, symbolType, constraintType types.Type) (*collectionPostCheckImplicitTypeNode, *parser.ParseError) {
+		return makeTypeInferenceWhenPossible(symbol, symbolType, constraintType, localVariables, globalVariables)
 	}
 
 	var symbol *lexer.Token
+	var lastVarSymbol *lexer.Token
+
 	var symbolType types.Type
+	var varDef *VariableDefinition
 
 	count := 0
+
+outter:
 	for p.isTokenAvailable() {
 		if count > 100 {
 			log.Printf("too many loop.\n analyzer = %s\n", p)
@@ -1631,8 +1984,26 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 		}
 
 		count++
-		symbolType = types.Typ[types.Invalid]
 		symbol = p.peek()
+
+		{ // temporary scope to avoid namespace polution
+			// the goal of this is to make 'key' value of the loop capable of type inference (for ease of use by the human user)
+			symbolName := string(symbol.Value)
+			def := p.file.extraVariableNameWithTypeInferenceBehavior[symbolName]
+
+			if def != nil && symbol.ID == lexer.DOLLAR_VARIABLE {
+				foundDef := getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
+
+				if def == foundDef {
+					originalID := symbol.ID
+					symbol.ID = lexer.DOT_VARIABLE
+
+					defer func() {
+						symbol.ID = originalID
+					}()
+				}
+			}
+		}
 
 		switch symbol.ID {
 		case lexer.STRING:
@@ -1656,6 +2027,8 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 			def := p.file.functions[functionName]
 
 			if def == nil {
+				symbolType = types.Typ[types.Invalid]
+
 				err = parser.NewParseError(symbol, errFunctionUndefined)
 				err.Range.End.Character = err.Range.Start.Character + len(functionName)
 				errs = append(errs, err)
@@ -1678,25 +2051,32 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 			p.nextToken()
 		case lexer.DOLLAR_VARIABLE, lexer.GROUP:
 
-			varDef := getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
+			// TODO: Is this type checking working with (lexer.GROUP) as well ?
+			// It is seems to not working to me (review and test this later)
+			lastVarSymbol = symbol
+
+			varDef = getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
 			symbolType, err = getTypeOfDollarVariableWithinFile(symbol, varDef)
-			if err != nil {
+			if err != nil && !errors.Is(err.Err, errDefeatedTypeSystem) {
 				errs = append(errs, err)
 			}
 
-			symbolType, err = getVariableImplicitType(varDef, symbol, symbolType)
-			if err != nil {
-				// this is done because '$' variable type is only definitively known at end of scope
-				recheck := newCollectionPostCheckVariable(varDef, symbol, symbolType)
+			// NOTE: this is useful only to test the **existance** of the variable field (a limitation from '$' var), not its type
+			// instead, type information are handled elsewhere
+			if types.Identical(symbolType, TYPE_ANY.Type()) {
 
-				p.variableToRecheckAtEndOfScope = append(p.variableToRecheckAtEndOfScope, recheck)
-			}
+				implicitTypeNode := extractOrInsertTemporaryImplicitTypeFromVariable(varDef, symbol)
+				if implicitTypeNode != nil { // varDef != nil <-------> because of 'extractOrInsertTemporaryImplicitTypeFromVariable()'
+					varFakeName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+					// candidateTypeTree := newNodeImplicitType(varDef.name, symbolType, symbol.Range)
+					// constraintTypeTree := newNodeImplicitType(varFakeName, symbolType, symbol.Range)
 
-			if count == 1 && varDef != nil { // if first symbol in expression
-				recheck := newCollectionPostCheckVariable(varDef, symbol, symbolType)
+					candidateTypeTree := implicitTypeNode
+					constraintTypeTree := newNodeImplicitType(varFakeName, TYPE_ANY.Type(), symbol.Range) // read note above
 
-				p.variableToRecheckAtEndOfScope = append(p.variableToRecheckAtEndOfScope, recheck)
-				p.file.firstTokenVarExpressionToRecheck = recheck
+					recheck := newCollectionPostCheckImplicitTypeNode(candidateTypeTree, constraintTypeTree, varDef, nil, symbol, nil)
+					lateVariableRecheck.variablesToRecheckAtEndOfScope = append(lateVariableRecheck.variablesToRecheckAtEndOfScope, recheck)
+				}
 			}
 
 			markVariableAsUsed(varDef)
@@ -1706,22 +2086,13 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 
 			p.nextToken()
 		case lexer.DOT_VARIABLE:
-			// TODO: check 'DOT_VARIABLE' when type system will be better established
-			// No check for variable definition
-			// but check for variable type when type system is ready
-			// but if method, make sure the type-check is going
 
-			varDef := getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
+			lastVarSymbol = symbol
+
+			varDef = getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
 			symbolType, err = getTypeOfDollarVariableWithinFile(symbol, varDef)
-			if err != nil {
+			if err != nil && !errors.Is(err.Err, errDefeatedTypeSystem) {
 				errs = append(errs, err)
-			}
-
-			if count == 1 && varDef != nil { // if first symbol in expression
-				recheck := newCollectionPostCheckVariable(varDef, symbol, symbolType)
-
-				p.variableToRecheckAtEndOfScope = append(p.variableToRecheckAtEndOfScope, recheck)
-				p.file.firstTokenVarExpressionToRecheck = recheck
 			}
 
 			markVariableAsUsed(varDef)
@@ -1740,8 +2111,12 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 			startRange := p.peek().Range
 			p.nextToken()
 
-			groupType, localErrs := p.makeSymboleDefinitionAnalysis(localVariables, globalVariables)
+			groupType, inferences, localErrs := p.makeSymboleDefinitionAnalysis(localVariables, globalVariables)
+
 			errs = append(errs, localErrs...)
+
+			lateVariableRecheck.uniqueVariableInExpression = inferences.uniqueVariableInExpression
+			lateVariableRecheck.variablesToRecheckAtEndOfScope = append(lateVariableRecheck.variablesToRecheckAtEndOfScope, inferences.variablesToRecheckAtEndOfScope...)
 
 			// skip closing token
 			symbol = p.peek()
@@ -1763,46 +2138,112 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 
 		case lexer.RIGTH_PAREN:
 			// do not skip this token now
-			//
 			// all token have been found for this sub-expression
-			// exprRange := p.peek().Range
-			// exprRange.Start = p.peekAt(startIndex).Range.Start
 
-			// groupType, localErrs := checkSymbolType(processedToken, processedTypes, exprRange, listOfUsedFunctions)
-			/*
-				groupType, localErrs := checkSymbolType(processedToken, nil, exprRange, listOfUsedFunctions)
-				errs = append(errs, localErrs...)
-			*/
-
-			// var groupType [2]types.Type
-
-			/*
-				invalidTypes := [2]types.Type{
-					types.Typ[types.Invalid],
-					TYPE_ERROR.Type(),
-				}
-			*/
-
-			groupType, localErrs := makeExpressionTypeCheck(processedToken, processedTypes, makeTypeInference)
-			for _, err := range localErrs {
-				errs = append(errs, err)
-			}
+			count--
 
 			// token ')' will be skipped by the caller
-			return groupType, errs
+			break outter
+
 		default:
 			log.Printf("unexpectd token type. token = %#v\n", symbol.String())
 			panic("unexpected token type to parse during 'definition analysis' on Expression. tok type = " + symbol.ID.String())
 		}
 	}
 
-	groupType, localErrs := makeExpressionTypeCheck(processedToken, processedTypes, makeTypeInference)
-	for _, err := range localErrs {
-		errs = append(errs, err)
+	if count == 1 && varDef != nil {
+		varFakeName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+		fakeConstraintTree := newNodeImplicitType(varFakeName, symbolType, lastVarSymbol.Range)
+
+		var candidateTypeTree *nodeImplicitType = nil
+		if types.Identical(symbolType, TYPE_ANY.Type()) {
+			candidateTypeTree = extractOrInsertTemporaryImplicitTypeFromVariable(varDef, symbol)
+		}
+
+		if candidateTypeTree == nil {
+			candidateTypeTree = newNodeImplicitType(varDef.name, symbolType, lastVarSymbol.Range)
+		}
+
+		recheck := newCollectionPostCheckImplicitTypeNode(candidateTypeTree, fakeConstraintTree, varDef, nil, lastVarSymbol, nil)
+		lateVariableRecheck.uniqueVariableInExpression = recheck
 	}
 
-	// return invalidTypes, errs
-	return groupType, errs
+	groupType, variablesToRecheck, localErrs := makeExpressionTypeCheck(processedToken, processedTypes, makeTypeInference, p.rangeExpression)
+	for _, err := range localErrs {
+		errs = append(errs, err)
+		// p.rangeExpression
+	}
+
+	lateVariableRecheck.variablesToRecheckAtEndOfScope = append(lateVariableRecheck.variablesToRecheckAtEndOfScope, variablesToRecheck...)
+
+	return groupType, lateVariableRecheck, errs
+}
+
+func makeTypeInferenceWhenPossible(symbol *lexer.Token, symbolType, constraintType types.Type, localVariables, globalVariables map[string]*VariableDefinition) (recheck *collectionPostCheckImplicitTypeNode, err *parser.ParseError) {
+
+	if types.Identical(constraintType, TYPE_ANY.Type()) { // no type inference to make here
+		return nil, nil
+	}
+
+	// This shouldn't be executed, since 'makeTypeInference()' (this function) is only called
+	// by 'makeTypeCheckOnSymbolForFunction()' whenever the argument type is == any
+	// this 'symbolType' of this function == any
+	if !types.Identical(symbolType, TYPE_ANY.Type()) { // if type != ANY_TYPE
+		// TODO: remove the code below and panic instead ????
+		_, errMsg := TypeCheckAgainstConstraint(symbolType, constraintType)
+		if errMsg != nil {
+			err := parser.NewParseError(symbol, errMsg)
+
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	switch symbol.ID {
+	case lexer.DOLLAR_VARIABLE, lexer.DOT_VARIABLE:
+		// do nothing, and postpone processing
+	default:
+		_, errMsg := TypeCheckAgainstConstraint(symbolType, constraintType)
+		if errMsg != nil {
+			err := parser.NewParseError(symbol, errMsg)
+
+			return nil, err
+		}
+
+		return nil, nil
+	}
+
+	// If we reach here, that mean one thing
+	// symbolType == ANY_TYPE && constraintType != ANY_TYPE
+	//
+	// In that case, do type inference implicitly, if '.' var but disallow '$' var
+
+	varDef := getVariableDefinitionForRootField(symbol, localVariables, globalVariables)
+	if varDef == nil {
+		err := parser.NewParseError(symbol, errVariableUndefined)
+		return nil, err
+	}
+
+	if symbol.ID == lexer.DOLLAR_VARIABLE { // ID = '.' var
+		varFakeName := "$_fake_root"
+		// varFakeName := NAME_TEMPORARY_VAR + strconv.Itoa(getUniqueNumber())
+		// candidateTypeTree := newNodeImplicitType(varDef.name, symbolType, symbol.Range)
+		candidateTypeTree := extractOrInsertTemporaryImplicitTypeFromVariable(varDef, symbol)
+		constraintTypeTree := newNodeImplicitType(varFakeName, constraintType, symbol.Range)
+
+		recheck := newCollectionPostCheckImplicitTypeNode(candidateTypeTree, constraintTypeTree, varDef, nil, symbol, nil)
+
+		return recheck, nil
+	}
+
+	// else 'lexer.DOT_VARIABLE'
+	symbolType, err = updateVariableImplicitType(varDef, symbol, constraintType)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
 var errEmptyVariableName error = errors.New("empty variable name")
@@ -1956,7 +2397,10 @@ func findFieldContainingRange(fields []string, pos lexer.Position) int {
 	return -1
 }
 
-// compute type of variable
+// TODO: RENAME THIS FUNCTION
+// compute the real type of variable, ignore the inference tree of type
+// meaning, computation of 'varDef.typ' rather than 'varDef.TreeImplicitType'
+// 'getDeclaredTypeAssociatedToVariable()', which is different from 'inferredType'
 func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDefinition) (types.Type, *parser.ParseError) {
 	invalidType := types.Typ[types.Invalid]
 
@@ -1977,6 +2421,11 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 	parentType := varDef.typ
 	if parentType == nil {
 		return TYPE_ANY.Type(), nil
+
+	} else if types.Identical(parentType, TYPE_ANY.Type()) && len(fields) > 1 {
+		err := parser.NewParseError(variable, errDefeatedTypeSystem)
+		return TYPE_ANY.Type(), err
+
 	} else if types.Identical(parentType, TYPE_ANY.Type()) {
 		return TYPE_ANY.Type(), nil
 	}
@@ -2105,11 +2554,6 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 			continue
 
 		case *types.Interface:
-			/*
-				for index := range t.NumEmbeddeds() {
-					fmt.Println("interface embeded = ", t.EmbeddedType(index))
-				}
-			*/
 
 			parentType = nil
 
@@ -2125,9 +2569,13 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 				break
 			}
 
-			// TODO: handle the case where the type is the empty interface 'interface{}' (known as 'any' type)
-			if parentType == nil && t.NumMethods() == 0 {
-				return TYPE_ANY.Type(), nil
+			// handle the case where the type is the empty interface 'interface{}' (known as 'any' type)
+			if types.Identical(t, TYPE_ANY.Type()) { // parentType == nil && t.NumMethods() == 0
+				err = parser.NewParseError(variable, errDefeatedTypeSystem)
+				err.Range.Start.Character += fieldsLocalPosition[i]
+				err.Range.End.Character = err.Range.Start.Character + len(fieldName)
+
+				return TYPE_ANY.Type(), err
 			}
 
 			if parentType == nil {
@@ -2148,9 +2596,9 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 			//
 			// WIP
 			//
-			log.Printf("---> function signature found\n\n")
-			log.Printf("------> func name = %s\n", fieldName)
-			log.Printf("------> func params size = %d\n", t.Params().Len())
+			// log.Printf("---> function signature found\n\n")
+			// log.Printf("------> func name = %s\n", fieldName)
+			// log.Printf("------> func params size = %d\n", t.Params().Len())
 
 			if t.Params().Len() != 0 {
 				err = parser.NewParseError(variable, fmt.Errorf("%w, chained function must be parameterless", errFunctionParameterSizeMismatch))
@@ -2161,7 +2609,7 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 			}
 
 			functionResult := t.Results()
-			log.Printf("------> func result = %d\n", functionResult.Len())
+			// log.Printf("------> func result = %d\n", functionResult.Len())
 
 			if functionResult == nil {
 				err = parser.NewParseError(variable, errFunctionVoidReturn)
@@ -2189,7 +2637,7 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 
 			i--
 			parentType = functionResult.At(0).Type()
-			log.Printf("------> func first result type = %s\n", parentType.String())
+			// log.Printf("------> func first result type = %s\n", parentType.String())
 
 			continue
 
@@ -2230,7 +2678,8 @@ func getTypeOfDollarVariableWithinFile(variable *lexer.Token, varDef *VariableDe
 // TODO: How to handle the <nil> value returned ? Should I send back 'types.Invalid' instead ?
 func unTuple(typ types.Type) [2]types.Type {
 	if typ == nil {
-		return [2]types.Type{nil, nil}
+		// return [2]types.Type{nil, nil}
+		return [2]types.Type{types.Typ[types.Invalid], TYPE_ERROR.Type()}
 	}
 
 	tuple, ok := typ.(*types.Tuple)
@@ -2239,7 +2688,8 @@ func unTuple(typ types.Type) [2]types.Type {
 	}
 
 	if tuple.Len() == 0 {
-		return [2]types.Type{nil, nil}
+		// return [2]types.Type{nil, nil}
+		return [2]types.Type{types.Typ[types.Invalid], TYPE_ERROR.Type()}
 	} else if tuple.Len() == 1 {
 		return [2]types.Type{tuple.At(0).Type(), nil}
 	} else if tuple.Len() == 2 {
@@ -2259,8 +2709,9 @@ var errFunctionVoidReturn error = errors.New("function cannot have 'void' return
 var errFunctionSecondReturnNotError error = errors.New("function's second return value must be an 'error' only")
 var errTypeMismatch error = errors.New("type mismatch")
 var errVariableNotUsed error = errors.New("variable is never used")
+var errDefeatedTypeSystem error = errors.New("type system defeated")
 
-func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, makeTypeInference InferenceFunc) (resultType [2]types.Type, errs []*parser.ParseError) {
+func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, makeTypeInference InferenceFunc, nodeRange lexer.Range) (resultType [2]types.Type, variablesToRecheck []*collectionPostCheckImplicitTypeNode, errs []*parser.ParseError) {
 	if len(symbols) != len(typs) {
 		log.Printf("every symbol should must have a single type."+
 			"\n symbols = %q\n typs = %q", symbols, typs)
@@ -2269,28 +2720,24 @@ func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, makeType
 
 	// 1. len(symbols) == 0 && len == 1
 	if len(symbols) == 0 {
-		err := parser.NewParseError(nil, errEmptyExpression)
+		err := parser.NewParseError(&lexer.Token{}, errEmptyExpression)
+		err.Range = nodeRange
 		errs = append(errs, err)
 
-		return unTuple(types.Typ[types.Invalid]), errs
+		return unTuple(types.Typ[types.Invalid]), nil, errs
 	} else if len(symbols) == 1 {
 		symbol := symbols[0]
 		typ := typs[0]
 
 		funcType, ok := typ.(*types.Signature)
 		if ok {
-			// TODO: 'makeExpressionTypeCheck()' shoul return many errors
-			// instead of returning the first error found, the function should instead return all errors found
-			// this way the user at once can know that all arguments of its function are wrong
-			// rather than trying one after the other (bc at the moment, it only return the first error found)
-			returnType, localErrs := makeFunctionTypeCheck(funcType, symbol, typs[1:], symbols[1:], makeTypeInference)
-
+			returnType, _, localErrs := makeFunctionTypeCheck(funcType, symbol, typs[1:], symbols[1:], makeTypeInference)
 			errs = append(errs, localErrs...)
 
-			return unTuple(returnType), errs
+			return unTuple(returnType), nil, errs
 		}
 
-		return unTuple(typ), nil
+		return unTuple(typ), nil, nil
 	}
 
 	// 2. len(symbols) >= 2 :: Always true if this section is reached
@@ -2299,25 +2746,23 @@ func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, makeType
 		err := parser.NewParseError(symbols[0], errArgumentsOnlyForFunction)
 		errs = append(errs, err)
 
-		return unTuple(types.Typ[types.Invalid]), errs
+		return unTuple(types.Typ[types.Invalid]), nil, errs
 	}
 
-	returnType, localErrs := makeFunctionTypeCheck(funcType, symbols[0], typs[1:], symbols[1:], makeTypeInference)
-	if localErrs != nil {
-		errs = append(errs, localErrs...)
+	returnType, rechecks, localErrs := makeFunctionTypeCheck(funcType, symbols[0], typs[1:], symbols[1:], makeTypeInference)
 
-		return unTuple(returnType), errs
-	}
+	errs = append(errs, localErrs...)
+	variablesToRecheck = append(variablesToRecheck, rechecks...)
 
-	return unTuple(returnType), nil
+	return unTuple(returnType), variablesToRecheck, errs
 }
 
-func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, argTypes []types.Type, argSymbols []*lexer.Token, makeTypeInference InferenceFunc) (resultType types.Type, errs []*parser.ParseError) {
+func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, argTypes []types.Type, argSymbols []*lexer.Token, makeTypeInference InferenceFunc) (resultType types.Type, variablesToRecheck []*collectionPostCheckImplicitTypeNode, errs []*parser.ParseError) {
 	if funcType == nil {
 		err := parser.NewParseError(funcSymbol, errFunctionUndefined)
 		errs = append(errs, err)
 
-		return types.Typ[types.Invalid], errs
+		return types.Typ[types.Invalid], nil, errs
 	}
 
 	// 1. Check Parameter VS Argument validity
@@ -2330,7 +2775,7 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 		err := parser.NewParseError(funcSymbol, errFunctionParameterSizeMismatch)
 		errs = append(errs, err)
 
-		return invalidReturnType, errs
+		return invalidReturnType, nil, errs
 	}
 
 	for i := range len(argSymbols) {
@@ -2338,7 +2783,7 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 		argumentType := argTypes[i]
 
 		if argFuncType, ok := argumentType.(*types.Signature); ok {
-			retVals, localErrs := makeFunctionTypeCheck(argFuncType, argSymbols[i], []types.Type{}, []*lexer.Token{}, makeTypeInference)
+			retVals, _, localErrs := makeFunctionTypeCheck(argFuncType, argSymbols[i], []types.Type{}, []*lexer.Token{}, makeTypeInference)
 
 			if localErrs != nil {
 				errs = append(errs, localErrs...)
@@ -2352,10 +2797,15 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 		if types.Identical(argumentType, TYPE_ANY.Type()) {
 			symbol := argSymbols[i]
 
-			err := makeTypeInference(symbol, argumentType, paramType)
+			recheck, err := makeTypeInference(symbol, argumentType, paramType)
 			if err != nil {
 				errs = append(errs, err)
 			}
+
+			if recheck != nil {
+				variablesToRecheck = append(variablesToRecheck, recheck)
+			}
+
 			continue
 		}
 
@@ -2386,7 +2836,7 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 
 	}
 
-	return funcType.Results(), errs
+	return funcType.Results(), variablesToRecheck, errs
 }
 
 func getVariableDefinitionForRootField(variable *lexer.Token, localVariables, globalVariables map[string]*VariableDefinition) *VariableDefinition {
@@ -2423,7 +2873,9 @@ func markVariableAsUsed(varDef *VariableDefinition) {
 	varDef.IsUsedOnce = true
 }
 
-// TODO: raname to 'get'
+// TODO: raname to 'getVariableImplicitTypeWhenCurrentTypeIsAnyType()'
+// 'getVariableImplicitTypeWhenAnyTypeIsTheCurrentType()'
+// 'getVariableImplicitTypeOrReturnAnyTypeOnError()'
 func getVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token, defaultType types.Type) (types.Type, *parser.ParseError) {
 	if symbol == nil {
 		log.Printf("cannot set implicit type of not existing symbol.\n varDef = %#v", varDef)
@@ -2449,16 +2901,11 @@ func getVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token, de
 
 	fields, _, err := splitVariableNameFields(symbol)
 	if err != nil {
-		return defaultType, err
+		return TYPE_ANY.Type(), err
 	}
 
 	if varDef.TreeImplicitType == nil {
-		if len(fields) > 1 {
-			err := parser.NewParseError(symbol, errFieldNotFound)
-			return defaultType, err
-		}
-
-		return defaultType, nil
+		return TYPE_ANY.Type(), nil
 	}
 
 	currentNode := varDef.TreeImplicitType
@@ -2531,6 +2978,8 @@ func getVariableImplicitRange(varDef *VariableDefinition, symbol *lexer.Token) *
 	return &currentNode.rng
 }
 
+// TODO: rename function 'updateVariableInferredType()', 'insertTypeIntoImplicitTypeNode()', ??????
+// 'updateVariableFromPathToImplicitType'
 func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token, symbolType types.Type) (types.Type, *parser.ParseError) {
 	if symbol == nil {
 		log.Printf("cannot set implicit type of not existing symbol.\n varDef = %#v", varDef)
@@ -2543,6 +2992,7 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 	}
 
 	// Implicit type only work whenever 'varDef.typ == TYPE_ANY' only, otherwise the type is specific enough
+	// in other word, if type is already known at declaration time, it is useful to try to infer it
 	if !types.Identical(varDef.typ, TYPE_ANY.Type()) {
 		return symbolType, nil
 	}
@@ -2576,7 +3026,8 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 		rootRange.End.Character = rootRange.Start.Character + len(fields[0])
 
 		varDef.TreeImplicitType.rng = rootRange
-		varDef.TreeImplicitType.fieldName = fields[0]
+		// varDef.TreeImplicitType.fieldName = fields[0] // this one cause a bug for 'with' statement
+		varDef.TreeImplicitType.toDiscard = false
 	}
 
 	var previousNode, currentNode *nodeImplicitType = nil, nil
@@ -2599,6 +3050,13 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 		fieldRange.End.Character = fieldRange.Start.Character + len(partialVarName)
 		// fieldRange.Start.Character = fieldRange.End.Character - len(fieldName)
 
+		if currentNode.isIterable { // We cannot go deeper into the tree if found in middle of path
+			errMsg := fmt.Errorf("%w, expected 'struct' or 'func' but found 'iterable'", errTypeMismatch)
+			err := parser.NewParseError(symbol, errMsg)
+
+			return currentNode.fieldType, err
+		}
+
 		childNode, ok := currentNode.children[fieldName]
 		if ok {
 			if childNode.toDiscard {
@@ -2613,15 +3071,16 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 				continue
 			}
 
-			// Current node is not of type 'ANY'
+			// Check that the remaining variable path is available within the the 'declared type'
+			// ie, turn off 'type inference', and look at type directly
+			//
 			// currentNode.fieldType != ANY
-			// TODO: rename to 'remainingVarName' ????
-			varNameToCheck, _ := joinVariableNameFields(fields[index:])
+			remainingVarName, _ := joinVariableNameFields(fields[index:])
 
-			varTokenToCheck := lexer.NewToken(lexer.DOLLAR_VARIABLE, symbol.Range, []byte(varNameToCheck))
-			varTokenToCheck.Range.Start.Character = symbol.Range.End.Character - len(varNameToCheck)
+			varTokenToCheck := lexer.NewToken(lexer.DOLLAR_VARIABLE, symbol.Range, []byte(remainingVarName))
+			varTokenToCheck.Range.Start.Character = symbol.Range.End.Character - len(remainingVarName)
 
-			fakeVarDef := NewVariableDefinition(varNameToCheck, nil, nil, "fake_var_definition")
+			fakeVarDef := NewVariableDefinition(remainingVarName, nil, nil, "fake_var_definition")
 			fakeVarDef.typ = currentNode.fieldType
 
 			fieldType, err := getTypeOfDollarVariableWithinFile(varTokenToCheck, fakeVarDef)
@@ -2650,7 +3109,7 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 
 	// Last field in variable name
 	lastFieldName := fields[len(fields)-1]
-	lastFieldType := symbolType
+	constraintType := symbolType
 
 	lastFieldRange := symbol.Range
 	lastFieldRange.Start.Character = lastFieldRange.End.Character - len(lastFieldName)
@@ -2675,13 +3134,13 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 
 	currentNode.toDiscard = false
 
-	if types.Identical(lastFieldType, TYPE_ANY.Type()) {
+	if types.Identical(constraintType, TYPE_ANY.Type()) { // do not update node type when received constraintType is ANY_TYPE
 		return currentNode.fieldType, nil
 	}
 
 	if !types.Identical(currentNode.fieldType, TYPE_ANY.Type()) {
-		if !types.Identical(currentNode.fieldType, lastFieldType) {
-			errMsg := fmt.Errorf("%w, expected '%s' but got '%s'", errTypeMismatch, currentNode.fieldType, lastFieldType)
+		if !types.Identical(currentNode.fieldType, constraintType) {
+			errMsg := fmt.Errorf("%w, expected '%s' but got '%s'", errTypeMismatch, constraintType, currentNode.fieldType)
 
 			err = parser.NewParseError(symbol, errMsg)
 			err.Range = lastFieldRange
@@ -2694,26 +3153,28 @@ func updateVariableImplicitType(varDef *VariableDefinition, symbol *lexer.Token,
 
 	// currentNode.fieldType == ANY_TYPE && len(currentNode.children) == 0
 	if len(currentNode.children) == 0 {
-		currentNode.fieldType = lastFieldType
+		currentNode.fieldType = constraintType
 
 		return currentNode.fieldType, nil
 	}
 
 	// currentNode.fieldType == ANY_TYPE && len(currentNode.children) > 0
-	for _, childNode := range currentNode.children {
-		typ := buildTypeFromTreeOfType(childNode)
-		ok := isTypeSubsetOfAnotherLargerOne(lastFieldType, typ)
+	typ := buildTypeFromTreeOfType(currentNode)
 
-		if !ok {
-			errMsg := fmt.Errorf("%w, type '%s' is not part of '%s' type", errTypeMismatch, typ, lastFieldType)
-			err = parser.NewParseError(symbol, errMsg)
-			err.Range = lastFieldRange
+	if types.Identical(typ, TYPE_ANY.Type()) { // this is for case when childreen are node 'toDiscard'
+		currentNode.fieldType = constraintType
+		return currentNode.fieldType, nil
 
-			return currentNode.fieldType, err
-		}
+	} else if !types.Identical(typ, constraintType) {
+		errMsg := fmt.Errorf("%w, expected '%s' but got '%s'", errTypeMismatch, constraintType, typ)
+		err := parser.NewParseError(symbol, errMsg)
+
+		return currentNode.fieldType, err
 	}
 
-	currentNode.fieldType = lastFieldType
+	isTypeSubsetOfAnotherLargerOne(constraintType, typ) // TODO: WIP (to remove ??)
+
+	currentNode.fieldType = constraintType
 
 	return currentNode.fieldType, nil
 }
@@ -2735,9 +3196,13 @@ func guessVariableTypeFromImplicitType(varDef *VariableDefinition) types.Type {
 	}
 
 	// reach here only if variable of type 'any'
-	inferedType := buildTypeFromTreeOfType(varDef.TreeImplicitType)
+	inferredType := buildTypeFromTreeOfType(varDef.TreeImplicitType)
 
-	return inferedType
+	if types.Identical(inferredType, types.Typ[types.Invalid]) && varDef.name == "." {
+		inferredType = varDef.typ
+	}
+
+	return inferredType
 }
 
 // TODO: rename to 'buildImplicitTypeFromRealType()' ????????????????????
@@ -2783,12 +3248,12 @@ func createImplicitTypeFromRealType(parentNode *nodeImplicitType, convertGoAstPo
 }
 
 type nodeImplicitType struct {
-	isRoot    bool
-	toDiscard bool
-	fieldName string
-	fieldType types.Type
-	children  map[string]*nodeImplicitType
-	rng       lexer.Range
+	toDiscard  bool
+	isIterable bool
+	fieldName  string
+	fieldType  types.Type
+	children   map[string]*nodeImplicitType
+	rng        lexer.Range
 }
 
 func newNodeImplicitType(fieldName string, fieldType types.Type, reach lexer.Range) *nodeImplicitType {
@@ -2797,12 +3262,12 @@ func newNodeImplicitType(fieldName string, fieldType types.Type, reach lexer.Ran
 	}
 
 	node := &nodeImplicitType{
-		isRoot:    false,
-		toDiscard: false,
-		fieldName: fieldName,
-		fieldType: fieldType,
-		children:  make(map[string]*nodeImplicitType),
-		rng:       reach,
+		isIterable: false,
+		toDiscard:  false,
+		fieldName:  fieldName,
+		fieldType:  fieldType,
+		children:   make(map[string]*nodeImplicitType),
+		rng:        reach,
 	}
 
 	return node
@@ -2818,19 +3283,52 @@ func buildTypeFromTreeOfType(tree *nodeImplicitType) types.Type {
 	}
 
 	if tree.toDiscard {
+		// TODO: should I return any_type instead ????
+		// return TYPE_ANY.Type()
+
 		return types.Typ[types.Invalid]
 	}
 
-	if len(tree.children) == 0 {
-		return tree.fieldType
-	}
-
-	// When len(tree.children) > 0 && tree.fieldType != ANY
 	if !types.Identical(tree.fieldType, TYPE_ANY.Type()) {
 		return tree.fieldType
 	}
 
-	// otherwise, compute below
+	if tree.isIterable {
+		if len(tree.children) > 2 {
+			log.Printf("no iterable implicit node can have more than 2 childreen"+"\n tree = %#v\n", tree)
+			panic("no iterable implicit node can have more than 2 childreen")
+		}
+
+		var keyType types.Type = types.Typ[types.Int]
+
+		keyTree := tree.children["key"]
+		if keyTree != nil {
+			keyType = buildTypeFromTreeOfType(keyTree)
+		}
+
+		valueTree := tree.children["value"]
+		if valueTree == nil {
+			log.Printf("inferred iterable cannot exist without a 'value' node in its type definition"+"\n tree = %#v\n", tree)
+			panic("inferred iterable cannot exist without a 'value' node in its type definition")
+		}
+
+		valueType := buildTypeFromTreeOfType(valueTree)
+
+		var treeType types.Type
+		if types.Identical(keyType, types.Typ[types.Int]) { // create slice
+			treeType = types.NewSlice(valueType)
+		} else { // create map
+			treeType = types.NewMap(keyType, valueType)
+		}
+
+		return treeType
+	}
+
+	// tree.isNotIterable && tree.fieldType != ANY
+	if len(tree.children) == 0 {
+		return tree.fieldType
+	}
+
 	varFields := make([]*types.Var, 0, len(tree.children))
 
 	for _, node := range tree.children {
@@ -2844,13 +3342,19 @@ func buildTypeFromTreeOfType(tree *nodeImplicitType) types.Type {
 		varFields = append(varFields, field)
 	}
 
-	structType := types.NewStruct(varFields, nil)
+	finalType := tree.fieldType
 
-	return structType
+	if len(varFields) > 0 {
+		finalType = types.NewStruct(varFields, nil)
+	}
+
+	return finalType
 }
 
 func extractOrInsertTemporaryImplicitTypeFromVariable(varDef *VariableDefinition, symbol *lexer.Token) *nodeImplicitType {
 	if varDef == nil {
+		return nil
+	} else if !types.Identical(varDef.typ, TYPE_ANY.Type()) {
 		return nil
 	}
 
@@ -2865,6 +3369,10 @@ func extractOrInsertTemporaryImplicitTypeFromVariable(varDef *VariableDefinition
 	fields, _, _ := splitVariableNameFields(symbol)
 
 	for index := 1; index < len(fields); index++ {
+		if tree.isIterable { // impossible to go deeper
+			return nil
+		}
+
 		fieldName := fields[index]
 
 		child, ok := tree.children[fieldName]
@@ -2883,6 +3391,79 @@ func extractOrInsertTemporaryImplicitTypeFromVariable(varDef *VariableDefinition
 	}
 
 	return tree
+}
+
+// WIP
+// TODO: RENAME ?????
+// 'updateIterableIntoImplicitTypeNode()', 'updateVariableFromIterableToImplicitType'
+func insertIterableIntoImplicitTypeNode(tree *nodeImplicitType, keyDefinition, valueDefinition *VariableDefinition) *parser.ParseError {
+	if tree == nil {
+		log.Printf("expected an implicit node to insert interable type but found <nil>"+"\n keyDef = %#v \n valDef = %#v\n", keyDefinition, valueDefinition)
+		panic("expected an implicit node to insert interable type but found <nil>")
+	} else if valueDefinition == nil {
+		log.Printf("found <nil> as iterable value type\n treeNode = %#v\n keyDef = %#v\n", tree, keyDefinition)
+		panic("found <nil> as iterable value type")
+	} else if !types.Identical(tree.fieldType, TYPE_ANY.Type()) {
+		log.Printf("loop 'key' and 'value' have been created expecting <any-type> for the expression\n tree = %s\n keyDef = %s\n valDef = %s\n", tree, keyDefinition, valueDefinition)
+		panic("loop 'key' and 'value' have been created expecting <any-type> for the expression, but its type is " + tree.fieldType.String())
+	} else if !types.Identical(valueDefinition.typ, TYPE_ANY.Type()) {
+		panic("expected <any-type> for loop value in order to trigger type inference, but got " + valueDefinition.typ.String())
+	}
+
+	if tree.isIterable { // if 'iterable' already inferred earlier, use it rather than creating a new one
+		if len(tree.children) == 0 {
+			log.Printf("no iterable implicit node can have 0 childreen"+"\n tree = %#v\n key = %#v\n value = %#v\n", tree, keyDefinition, valueDefinition)
+			panic("no iterable implicit node can have 0 childreen")
+		} else if len(tree.children) > 2 {
+			log.Printf("no iterable implicit node can have more than 2 childreen"+"\n tree = %#v\n key = %#v\n value = %#v\n", tree, keyDefinition, valueDefinition)
+			panic("no iterable implicit node can have more than 2 childreen")
+		}
+
+		key := tree.children["key"]
+		if key != nil && keyDefinition != nil {
+			keyDefinition.TreeImplicitType = key
+		}
+
+		value := tree.children["value"]
+		if value == nil {
+			log.Printf("inferred iterable cannot exist without a 'value' node in its type definition"+"\n tree = %#v\n key = %#v\n value = %#v\n", tree, keyDefinition, valueDefinition)
+			panic("inferred iterable cannot exist without a 'value' node in its type definition")
+		}
+
+		valueDefinition.TreeImplicitType = value
+
+	} else { // tree.isNotIterable, then create a new inferred iterable type
+		if len(tree.children) > 0 {
+			err := parser.NewParseError(&lexer.Token{}, fmt.Errorf("%w, expected array, slice, map, int, chan, or iterator", errTypeMismatch))
+			return err
+		}
+
+		// make sure there is at least a root node for inference to kick in
+		tok := lexer.NewToken(lexer.DOLLAR_VARIABLE, lexer.Range{}, []byte("$fake_root"))
+		if valueDefinition.TreeImplicitType == nil {
+			valueTree := extractOrInsertTemporaryImplicitTypeFromVariable(valueDefinition, tok)
+			valueTree.toDiscard = false
+			valueDefinition.TreeImplicitType = valueTree
+		}
+
+		if keyDefinition != nil && keyDefinition.TreeImplicitType == nil {
+			keyTree := extractOrInsertTemporaryImplicitTypeFromVariable(keyDefinition, tok)
+			keyTree.toDiscard = false
+			keyDefinition.TreeImplicitType = keyTree
+		}
+
+		// if ok (empty children), convert node to iterable type
+		tree.isIterable = true
+		// tree.toDiscard = false // TODO: not sure about this ? What about '$' variable ???
+
+		if keyDefinition != nil {
+			tree.children["key"] = keyDefinition.TreeImplicitType
+		}
+
+		tree.children["value"] = valueDefinition.TreeImplicitType
+	}
+
+	return nil
 }
 
 // This function assume every tokens have been processed correctly
@@ -2930,9 +3511,9 @@ func remapRangeFromCommentGoCodeToSource(header string, boundary, target lexer.R
 	}
 
 	if rangeRemaped.End.Line > boundary.End.Line {
-		msg := "boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n"
-		log.Printf(msg, boundary.End.Line, rangeRemaped.End.Line)
-		log.Printf("boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n", boundary.End.Line, rangeRemaped.End.Line)
+		// msg := "boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n"
+		// log.Printf(msg, boundary.End.Line, rangeRemaped.End.Line)
+		// log.Printf("boundary.End.Line = %d ::: rangeRemaped.End.Line = %d\n", boundary.End.Line, rangeRemaped.End.Line)
 
 		rangeRemaped.End.Line = boundary.End.Line
 		// panic("remaped range cannot excede the comment GoCode boundary")
@@ -3017,7 +3598,7 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 	// 1. convert parse error from go/ast.Error to lexer.Error, and adjust the 'Range'
 
 	if parseError != nil {
-		log.Println("comment scanner error found, ", parseError)
+		// log.Println("comment scanner error found, ", parseError)
 
 		errorList, ok := parseError.(scanner.ErrorList)
 		if !ok {
@@ -3031,7 +3612,7 @@ func convertThirdPartiesParseErrorToLocalError(parseError error, errsType []type
 			parseErr := NewParseErrorFromErrorList(errScanner, randomColumnOffset)
 			parseErr.Range = remapRangeFromCommentGoCodeToSource(virtualHeader, comment.GoCode.Range, parseErr.Range)
 
-			log.Println("comment scanner error :: ", parseErr)
+			// log.Println("comment scanner error :: ", parseErr)
 
 			errs = append(errs, parseErr)
 		}
@@ -3237,8 +3818,15 @@ type findAstNodeRelatedToPosition struct {
 	IsTemplate   bool
 	IsVariable   bool
 	IsExpression bool
+	IsHeader     bool
 }
 
+func (v *findAstNodeRelatedToPosition) SetHeaderFlag(ok bool) {
+	v.IsHeader = ok
+}
+
+// the search for the appropriate node is highly dependent on AstNode 'Range'
+// If the parent node do not contain the range of its children, then they will never be discover/found
 func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor {
 	// TODO: the token in question can be: 'variable', 'function', 'template name', 'keyword(no-op)', 'garbase(no-op)'
 
@@ -3252,11 +3840,11 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 	}
 
 	if !node.Range().Contains(v.Position) {
-		log.Println("NOPE, POSITION OUT OF RANGE, GO ELSEWHERE. nodeRange = ", node.Range())
+		// log.Println("NOPE, POSITION OUT OF RANGE, GO ELSEWHERE. nodeRange = ", node.Range())
 		return nil
 	}
 
-	log.Println("Hourray, POSITION IS IN RANGE. node = ", node)
+	// log.Println("Hourray, POSITION IS IN RANGE. node = ", node)
 
 	switch n := node.(type) {
 	case *parser.GroupStatementNode:
@@ -3273,12 +3861,14 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 
 		return v
 	case *parser.VariableAssignationNode:
-		if n.VariableName.Range.Contains(v.Position) {
-			v.TokenFound = n.VariableName
-			v.NodeFound = n
-			v.IsVariable = true
+		for _, variable := range n.VariableNames {
+			if variable.Range.Contains(v.Position) {
+				v.TokenFound = variable
+				v.NodeFound = n
+				v.IsVariable = true
 
-			return nil
+				return nil
+			}
 		}
 
 		v.NodeFound = n
@@ -3320,6 +3910,10 @@ func (v *findAstNodeRelatedToPosition) Visit(node parser.AstNode) parser.Visitor
 
 				if v.NodeFound == nil {
 					v.NodeFound = n
+				}
+
+				if v.IsHeader {
+					v.LastParent = v.LastParent.Parent()
 				}
 
 				return nil
@@ -3439,7 +4033,7 @@ func TypeCheckAgainstConstraint(candidateType, constraintType types.Type) (types
 // candidateType must have at least all fields and method contained within constraintType to pass
 func TypeCheckCompatibilityWithConstraint(candidateType, constraintType types.Type) (types.Type, error) {
 	if types.Identical(candidateType, TYPE_ANY.Type()) {
-		return TYPE_ANY.Type(), nil
+		return TYPE_ANY.Type(), errDefeatedTypeSystem
 
 	} else if types.Identical(constraintType, TYPE_ANY.Type()) {
 		return TYPE_ANY.Type(), nil
@@ -3543,6 +4137,69 @@ func checkImplicitTypeCompatibility(candidateTree, constraintTree *nodeImplicitT
 	}
 
 	return constraintTree.fieldType, nil
+}
+
+// resolve/obtain, resolveKeyTypeFromInterableType()
+// Also, 'iterator' type is still not working properly ! to improve in the future
+func getKeyAndValueTypeFromIterableType(source types.Type) (key types.Type, value types.Type, err error) {
+	source = source.Underlying()
+
+	if types.Identical(source, TYPE_ANY.Type()) {
+		return TYPE_ANY.Type(), TYPE_ANY.Type(), nil
+	}
+
+	switch typ := source.(type) {
+	case *types.Slice:
+		return types.Typ[types.Int], typ.Elem(), nil
+
+	case *types.Map:
+		return typ.Key(), typ.Elem(), nil
+
+	case *types.Array:
+		return types.Typ[types.Int], typ.Elem(), nil
+
+	case *types.Basic:
+		if !types.Identical(typ, types.Typ[types.Int]) {
+			break
+		}
+
+		return types.Typ[types.Invalid], types.Typ[types.Int], nil
+
+	case *types.Chan:
+		return types.Typ[types.Int], typ.Elem(), nil
+
+	// case *types.Named:
+	//
+	// look for iter.seq & iter.seq2 method
+	case *types.Signature: // handle iter.seq & iter.seq2 here
+		err = fmt.Errorf("%w, iterator type poorly definied", errTypeMismatch)
+
+		// 1. verify that return type match iter.seq definition
+		if typ.Results().Len() != 1 {
+			break // will return an error
+		}
+
+		returnType := typ.Results().At(0).Type().Underlying()
+		if !types.Identical(returnType, types.Typ[types.Bool]) {
+			break // will return an error
+		}
+
+		// 2. verify that parameter size match iter.seq definition
+		// TODO: continue handling iterator
+		// however, I should fetch the definiton of the iterator within the std
+		// then compare the std version against the user version to see if there is match
+		// eg. types.Identical(stdIteratorSignature, typ)
+		// For now return any_type
+
+		return TYPE_ANY.Type(), TYPE_ANY.Type(), nil
+
+	default:
+		break // will return an error
+	}
+
+	err = fmt.Errorf("%w, expected array, slice, map, int, chan, or iterator", errTypeMismatch)
+
+	return types.Typ[types.Invalid], types.Typ[types.Invalid], err
 }
 
 // End

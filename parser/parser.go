@@ -173,9 +173,6 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 
 		switch newScope.Kind() {
 		case KIND_IF, KIND_WITH, KIND_RANGE_LOOP, KIND_BLOCK_TEMPLATE, KIND_DEFINE_TEMPLATE:
-			// newScope.parent = getLastElement(p.openedNodeStack)
-			// currentScope := p.openedNodeStack[stackSize - 1]
-
 			newScope.parent = currentScope
 			appendStatementToCurrentScope(currentScope, newScope)
 			err = appendStatementToScopeShortcut(currentScope, newScope)
@@ -186,11 +183,12 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 			if stackSize >= 2 {
 				switch currentScope.Kind() {
 				case KIND_IF, KIND_ELSE_IF: // Remove the last element from the stack and switch it with 'KIND_ELSE_IF' scope
-					parentScope := p.openedNodeStack[stackSize-2]
+					scopeToClose := currentScope
+					scopeToClose.rng.End = newScope.Range().Start
 
+					parentScope := p.openedNodeStack[stackSize-2]
 					p.openedNodeStack = p.openedNodeStack[:stackSize-1]
 
-					// newScope.parent = getLastElement(p.openedNodeStack)
 					newScope.parent = parentScope
 					appendStatementToCurrentScope(parentScope, newScope)
 
@@ -207,12 +205,13 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 			if stackSize >= 2 {
 				switch currentScope.Kind() {
 				case KIND_WITH, KIND_ELSE_WITH:
+					scopeToClose := currentScope
+					scopeToClose.rng.End = newScope.Range().Start
+
 					// Remove the last element from the stack and switch it with 'KIND_ELSE_WITH' scope
 					parentScope := p.openedNodeStack[stackSize-2]
-
 					p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold current scope
 
-					// newScope.parent = getLastElement(p.openedNodeStack)
 					newScope.parent = parentScope
 					appendStatementToCurrentScope(parentScope, newScope)
 
@@ -230,11 +229,13 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 				switch currentScope.Kind() {
 				case KIND_IF, KIND_ELSE_IF, KIND_WITH, KIND_ELSE_WITH, KIND_RANGE_LOOP:
 					// Remove the last element from the stack and switch it with 'KIND_ELSE' scope
-					parentScope := p.openedNodeStack[stackSize-2]
 
+					scopeToClose := currentScope
+					scopeToClose.rng.End = newScope.Range().Start
+
+					parentScope := p.openedNodeStack[stackSize-2]
 					p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold previous scope
 
-					// currentScope := p.openedNodeStack[stackSize - 1] // safe bc of previous 'if' condition
 					newScope.parent = parentScope
 					appendStatementToCurrentScope(parentScope, newScope)
 
@@ -250,17 +251,14 @@ func (p *Parser) safeStatementGrouping(node AstNode) *ParseError {
 			}
 		case KIND_END:
 			if stackSize >= 2 {
-				// scopeToClose := getLastElement(p.openedNodeStack)
 				scopeToClose := currentScope
 				scopeToClose.rng.End = newScope.Range().Start
 
 				parentScope := p.openedNodeStack[stackSize-2]
+				p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold/close current scope
 
-				// newScope.parent = getLastElement(p.openedNodeStack)
 				newScope.parent = parentScope
 				appendStatementToCurrentScope(parentScope, newScope)
-
-				p.openedNodeStack = p.openedNodeStack[:stackSize-1] // fold/close current scope
 
 			} else {
 				err = &ParseError{Range: newScope.Range(), Err: errors.New("extraneous 'end' statement detected")}
@@ -363,69 +361,19 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 	}
 
 	// 3. Syntax Parser for the Go Template language
-	if p.acceptAt(1, lexer.DECLARATION_ASSIGNEMENT) {
-		varDeclarationNode, err := p.declarationAssignmentParser()
-
-		if err != nil {
-			return varDeclarationNode, err // partial AST are meant for debugging
-		}
-
-		if !p.expect(lexer.EOL) {
-			err = NewParseError(p.peek(), errors.New("syntax for assignment delcaration didn't end properly. extraneous expression"))
-			err.Range.End = lastTokenInInstruction.Range.End
-			return varDeclarationNode, err
-		}
-
-		return varDeclarationNode, nil
-
-	} else if p.acceptAt(1, lexer.ASSIGNEMENT) {
-		varInitialization, err := p.initializationAssignmentParser()
-
-		if err != nil {
-			return varInitialization, err // partial AST are meant for debugging
-		}
-
-		if !p.expect(lexer.EOL) {
-			err = NewParseError(p.peek(), errors.New("syntax for assignment didn't end properly. extraneous expression"))
-			err.Range.End = lastTokenInInstruction.Range.End
-			return varInitialization, err
-		}
-
-		return varInitialization, nil
-
-	} else if p.accept(lexer.COMMENT) {
-		commentExpression := &CommentNode{kind: KIND_COMMENT, Value: p.peek(), rng: p.peek().Range}
-
-		p.nextToken()
-
-		if !p.expect(lexer.EOL) {
-			err := NewParseError(p.peek(), errors.New("syntax for comment didn't end properly. extraneous expression"))
-			err.Range.End = lastTokenInInstruction.Range.End
-			return commentExpression, err
-		}
-
-		// Check that this comment contains go code to semantically analize
-		lookForAndSetGoCodeInComment(commentExpression)
-
-		return commentExpression, nil
-
-	} else if p.accept(lexer.KEYWORD) {
+	if p.accept(lexer.KEYWORD) {
 		keywordToken := p.peek()
 
 		// INFO: most composite statements (else if xxx, etc) do not check for 'EOL' on purpose
 
 		if bytes.Compare(keywordToken.Value, []byte("if")) == 0 {
-			/*
-				ifExpression := &GroupStatementNode{}
-				ifExpression.Kind = KIND_IF
-				ifExpression.Range = keywordToken.Range
-			*/
 
 			ifExpression := NewGroupStatementNode(KIND_IF, keywordToken.Range)
 			ifExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken() // skip keyword "if"
 
+			// BUG: Change 'StatementParser()' to something more specific that only handle variable declaration, assignment, multi expression, expression
 			expression, err := p.StatementParser()
 			ifExpression.ControlFlow = expression
 
@@ -453,11 +401,6 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return ifExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("else")) == 0 {
-			/*
-				elseExpression := &GroupStatementNode{}
-				elseExpression.Kind = KIND_ELSE
-				elseExpression.Range = keywordToken.Range
-			*/
 
 			elseExpression := NewGroupStatementNode(KIND_ELSE, keywordToken.Range)
 			elseExpression.rng.End = lastTokenInInstruction.Range.End
@@ -490,7 +433,7 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			case KIND_WITH:
 				elseCompositeExpression.SetKind(KIND_ELSE_WITH)
 			default:
-				err = NewParseError(keywordToken, errors.New("bad syntax for else statement"))
+				err = NewParseError(keywordToken, errors.New("else statement expect either 'if' or 'with' or nothing"))
 				err.Range = elseCompositeExpression.Range()
 				return elseCompositeExpression, err
 			}
@@ -498,11 +441,6 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return elseCompositeExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("end")) == 0 {
-			/*
-				endExpression := &GroupStatementNode{}
-				endExpression.Kind = KIND_END
-				endExpression.Range = keywordToken.Range
-			*/
 
 			endExpression := NewGroupStatementNode(KIND_END, keywordToken.Range)
 			endExpression.rng.End = lastTokenInInstruction.Range.End
@@ -518,32 +456,13 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 			return endExpression, nil
 
 		} else if bytes.Compare(keywordToken.Value, []byte("range")) == 0 {
-			/*
-				rangeExpression := &GroupStatementNode{}
-				rangeExpression.Kind = KIND_RANGE_LOOP
-				rangeExpression.Range = keywordToken.Range
-			*/
 
 			rangeExpression := NewGroupStatementNode(KIND_RANGE_LOOP, keywordToken.Range)
 			rangeExpression.rng.End = lastTokenInInstruction.Range.End
 
 			p.nextToken()
 
-			var expression AstNode
-			var err *ParseError
-
-			if p.acceptAt(1, lexer.COMMA) {
-				expression, err = p.doubleDeclarationAssignmentParser()
-
-				if !p.expect(lexer.EOL) {
-					err = NewParseError(keywordToken, errors.New("'range' statement has extraneous expression"))
-					err.Range.End = lastTokenInInstruction.Range.End
-					return rangeExpression, err
-				}
-			} else {
-				expression, err = p.StatementParser()
-			}
-
+			expression, err := p.StatementParser()
 			rangeExpression.ControlFlow = expression
 
 			if err != nil {
@@ -730,6 +649,52 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 
 			return templateExpression, nil
 		}
+
+	} else if p.acceptAt(1, lexer.DECLARATION_ASSIGNEMENT) || p.acceptAt(3, lexer.DECLARATION_ASSIGNEMENT) {
+		varDeclarationNode, err := p.declarationAssignmentParser()
+
+		if err != nil {
+			return varDeclarationNode, err // partial AST are meant for debugging
+		}
+
+		if !p.expect(lexer.EOL) {
+			err = NewParseError(p.peek(), errors.New("syntax for assignment delcaration didn't end properly. extraneous expression"))
+			err.Range.End = lastTokenInInstruction.Range.End
+			return varDeclarationNode, err
+		}
+
+		return varDeclarationNode, nil
+
+	} else if p.acceptAt(1, lexer.ASSIGNEMENT) || p.acceptAt(3, lexer.ASSIGNEMENT) {
+		varInitialization, err := p.initializationAssignmentParser()
+
+		if err != nil {
+			return varInitialization, err // partial AST are meant for debugging
+		}
+
+		if !p.expect(lexer.EOL) {
+			err = NewParseError(p.peek(), errors.New("syntax for assignment didn't end properly. extraneous expression"))
+			err.Range.End = lastTokenInInstruction.Range.End
+			return varInitialization, err
+		}
+
+		return varInitialization, nil
+
+	} else if p.accept(lexer.COMMENT) {
+		commentExpression := &CommentNode{kind: KIND_COMMENT, Value: p.peek(), rng: p.peek().Range}
+
+		p.nextToken()
+
+		if !p.expect(lexer.EOL) {
+			err := NewParseError(p.peek(), errors.New("syntax for comment didn't end properly. extraneous expression"))
+			err.Range.End = lastTokenInInstruction.Range.End
+			return commentExpression, err
+		}
+
+		// Check that this comment contains go code to semantically analize
+		lookForAndSetGoCodeInComment(commentExpression)
+
+		return commentExpression, nil
 	}
 
 	// 4. Default parser whenever no other parser have been enabled
@@ -740,8 +705,17 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 	}
 
 	if !p.expect(lexer.EOL) {
-		err = NewParseError(p.peek(), errors.New("expected end of expression, but got extraneous expression"))
+
+		var errMsg error
+		if p.expect(lexer.COMMA) {
+			errMsg = errors.New("more than 2 variables detected for declaration/assignment")
+		} else {
+			errMsg = errors.New("expected end of expression, but got extraneous tokens")
+		}
+
+		err = NewParseError(p.peek(), errMsg)
 		err.Range.End = lastTokenInInstruction.Range.End
+
 		return multiExpression, err
 	}
 
@@ -749,18 +723,6 @@ func (p *Parser) StatementParser() (ast AstNode, er *ParseError) {
 }
 
 func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *ParseError) {
-	if !p.accept(lexer.DOLLAR_VARIABLE) {
-		err := NewParseError(p.peek(), errors.New("variable name must start with '$'"))
-		return nil, err
-	}
-
-	variable := p.peek()
-	p.nextToken()
-
-	if !p.expect(lexer.DECLARATION_ASSIGNEMENT) {
-		err := NewParseError(p.peek(), errors.New("expected assignmement '=', but found something else"))
-		return nil, err
-	}
 
 	lastTokenInInstruction := p.peekAtEndCurrentInstruction() // token before 'EOL'
 	if lastTokenInInstruction == nil {
@@ -769,9 +731,40 @@ func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *Parse
 
 	varDeclarationNode := &VariableDeclarationNode{}
 	varDeclarationNode.kind = KIND_VARIABLE_DECLARATION
-	varDeclarationNode.rng = variable.Range
+	varDeclarationNode.rng = p.peek().Range
 	varDeclarationNode.rng.End = lastTokenInInstruction.Range.End
-	varDeclarationNode.VariableNames = append(varDeclarationNode.VariableNames, variable)
+
+	count := 0
+	for {
+		count++
+
+		if count > 2 {
+			err := NewParseError(p.peek(), errors.New("only one or two variables can be declared at once"))
+			err.Range = varDeclarationNode.rng
+			return nil, err
+		}
+
+		if !p.accept(lexer.DOLLAR_VARIABLE) {
+			err := NewParseError(p.peek(), errors.New("variable name must start with '$'"))
+			return nil, err
+		}
+
+		variable := p.peek()
+		varDeclarationNode.VariableNames = append(varDeclarationNode.VariableNames, variable)
+
+		p.nextToken()
+
+		if p.expect(lexer.COMMA) {
+			continue
+		}
+
+		break
+	}
+
+	if !p.expect(lexer.DECLARATION_ASSIGNEMENT) {
+		err := NewParseError(p.peek(), errors.New("expected assignment ':=', but found something else"))
+		return nil, err
+	}
 
 	expression, err := p.multiExpressionParser()
 	varDeclarationNode.Value = expression
@@ -791,56 +784,7 @@ func (p *Parser) declarationAssignmentParser() (*VariableDeclarationNode, *Parse
 	return varDeclarationNode, nil
 }
 
-func (p *Parser) doubleDeclarationAssignmentParser() (*VariableDeclarationNode, *ParseError) {
-	if !p.accept(lexer.DOLLAR_VARIABLE) {
-		err := NewParseError(p.peek(), errors.New("expected variable begining with '$' but got something else"))
-		return nil, err
-	}
-
-	firstVariable := p.peek()
-	p.nextToken()
-
-	if !p.expect(lexer.COMMA) {
-		err := NewParseError(p.peek(), errors.New("expected ',' to separate variable while declaring them"))
-		return nil, err
-	}
-
-	varDeclarationNode, err := p.declarationAssignmentParser()
-	if err != nil {
-		return varDeclarationNode, err // partial AST are meant for debugging
-	}
-
-	if varDeclarationNode == nil { // because if err == nil, then expression != nil
-		panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + varDeclarationNode.String())
-	}
-
-	if len(varDeclarationNode.VariableNames) != 1 {
-		err = NewParseError(firstVariable, errors.New("expected one variable after ',' but got something else"))
-		err.Range = varDeclarationNode.rng
-		return varDeclarationNode, err
-	}
-
-	secondVariable := varDeclarationNode.VariableNames[0]
-	varDeclarationNode.VariableNames = nil
-	varDeclarationNode.VariableNames = append(varDeclarationNode.VariableNames, firstVariable, secondVariable)
-	varDeclarationNode.rng.Start = firstVariable.Range.Start
-
-	return varDeclarationNode, nil
-}
-
 func (p *Parser) initializationAssignmentParser() (*VariableAssignationNode, *ParseError) {
-	if !p.accept(lexer.DOLLAR_VARIABLE) {
-		err := NewParseError(p.peek(), errors.New("the variable name must start by '$', and only contains alphanumerical char"))
-		return nil, err
-	}
-
-	variable := p.peek()
-	p.nextToken()
-
-	if !p.expect(lexer.ASSIGNEMENT) {
-		err := NewParseError(p.peek(), errors.New("expected assignmement '=', but found something else"))
-		return nil, err
-	}
 
 	lastTokenInInstruction := p.peekAtEndCurrentInstruction() // token before 'EOL'
 	if lastTokenInInstruction == nil {
@@ -849,21 +793,49 @@ func (p *Parser) initializationAssignmentParser() (*VariableAssignationNode, *Pa
 
 	varAssignation := &VariableAssignationNode{}
 	varAssignation.kind = KIND_VARIABLE_ASSIGNMENT
-	varAssignation.VariableName = variable
-	varAssignation.rng = variable.Range
+	varAssignation.rng = p.peek().Range
 	varAssignation.rng.End = lastTokenInInstruction.Range.End
+
+	// varAssignation.VariableName = variable
+	count := 0
+	for {
+		count++
+
+		if count > 2 {
+			err := NewParseError(p.peek(), errors.New("only one or two variables can be declared at once"))
+			err.Range = varAssignation.rng
+			return nil, err
+		}
+
+		if !p.accept(lexer.DOLLAR_VARIABLE) {
+			// err := NewParseError(p.peek(), errors.New("variable name must start with '$'"))
+			// BUG: replace the code below by the one above
+			err := NewParseError(p.peek(), errors.New("variable name must start with '$'; assign ; "+string(p.peek().Value)))
+			return nil, err
+		}
+
+		variable := p.peek()
+		varAssignation.VariableNames = append(varAssignation.VariableNames, variable)
+
+		p.nextToken()
+
+		if p.expect(lexer.COMMA) {
+			continue
+		}
+
+		break
+	}
+
+	if !p.expect(lexer.ASSIGNEMENT) {
+		err := NewParseError(p.peek(), errors.New("expected assignment '=', but found something else"))
+		return nil, err
+	}
 
 	expression, err := p.multiExpressionParser()
 	varAssignation.Value = expression
 	if err != nil {
 		return varAssignation, err // partial AST are meant for debugging
 	}
-
-	if varAssignation == nil { // because if err == nil, then expression != nil
-		panic("returned AST was nil although parsing completed succesfully. can't be added to ControlFlow\n" + varAssignation.String())
-	}
-
-	varAssignation.rng.End = expression.Range().End
 
 	return varAssignation, nil
 }
@@ -1025,12 +997,14 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 
 	before, after, found := bytes.Cut(comment, []byte(SEP_COMMENT_GOCODE))
 	if !found {
-		log.Printf("SEP not found :: sep = %s :: comment = %q\n", SEP_COMMENT_GOCODE, comment)
+		// log.Printf("SEP not found :: sep = %s :: comment = %q\n", SEP_COMMENT_GOCODE, comment)
+		return
+	} else if len(after) == 0 {
 		return
 	}
 
 	if len(bytes.TrimSpace(before)) > 0 {
-		log.Printf("SEP obfuscated by garbage :: before sep = %q :: comment = %q\n", before, comment)
+		// log.Printf("SEP obfuscated by garbage :: before sep = %q :: comment = %q\n", before, comment)
 		return
 	}
 
@@ -1042,7 +1016,7 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 		// continue to next step succesfully
 	default:
 		// TODO: report this error to user instead of only printing it in the log ?
-		log.Printf("after SEP, no separation 'space' = %q\n", comment)
+		// log.Printf("after SEP, no separation 'space' = %q\n", comment)
 		return
 	}
 
@@ -1061,8 +1035,6 @@ func lookForAndSetGoCodeInComment(commentExpression *CommentNode) {
 		Range: reach,
 		Value: comment,
 	}
-
-	log.Printf("\nHourray, go:code found : %q\n\n", comment)
 }
 
 func (p Parser) peek() *lexer.Token {
@@ -1158,14 +1130,6 @@ func (p *Parser) expect(kind lexer.Kind) bool {
 
 func (p Parser) isEOF() bool {
 	return len(p.input) == 0
-}
-
-func (p Parser) isEOL() bool {
-	if len(p.input) == 0 {
-		return false
-	}
-
-	return p.input[0].ID == lexer.EOL
 }
 
 func (p *Parser) incRecursionDepth() {

@@ -12,7 +12,10 @@
 	{{ .age }}
 	{{ magic $.name .age }}
 	{{ magic $.age .age }}
+	{{{ }}
 {{ end }}
+
+{{{ }}
 
 {{ .name }}
 {{ .age }}
@@ -20,5 +23,9 @@
 
 {{ template "tpl 1" . }}
 {{ template "tpl 1" $ }}
+
+
+{{ template "tpl 1" .name }}
+{{ template "tpl 1" $.name }}
 
 {{ template "tpl 1" "namerr" }}

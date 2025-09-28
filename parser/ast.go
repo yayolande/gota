@@ -46,10 +46,21 @@ func (v VariableDeclarationNode) DefinitionAnalysis(globalVariables, localVariab
 	panic("not useful anymore")
 }
 
+func NewVariableDeclarationNode(kind Kind, rng lexer.Range, variables []*lexer.Token, value *MultiExpressionNode) *VariableDeclarationNode {
+	node := &VariableDeclarationNode{
+		kind:          kind,
+		rng:           rng,
+		Value:         value,
+		VariableNames: nil,
+	}
+
+	return node
+}
+
 type VariableAssignationNode struct {
-	kind         Kind
-	rng          lexer.Range
-	VariableName *lexer.Token
+	kind          Kind
+	rng           lexer.Range
+	VariableNames []*lexer.Token
 	// Value	AstNode	// of type expression
 	Value *MultiExpressionNode // of type expression
 }
@@ -326,6 +337,7 @@ func (v CommentNode) DefinitionAnalysis(globalVariables, localVariables, functio
 
 type Visitor interface {
 	Visit(node AstNode) Visitor
+	SetHeaderFlag(ok bool)
 }
 
 func Walk(action Visitor, node AstNode) {
@@ -335,9 +347,14 @@ func Walk(action Visitor, node AstNode) {
 
 	switch n := node.(type) {
 	case *GroupStatementNode:
+
+		action.SetHeaderFlag(true)
+
 		if n.ControlFlow != nil {
 			Walk(action, n.ControlFlow)
 		}
+
+		action.SetHeaderFlag(false)
 
 		for _, statement := range n.Statements {
 			Walk(action, statement)

@@ -1,3 +1,14 @@
+{{/* go:code 
+	type stringHandler struct {}
+	func (s stringHandler) ToLower (string) string
+	func (s stringHandler) TrimSuffix (string, string) string
+
+	func strings() stringHandler
+	func mul (int, int) int
+	func add (int, int) int
+*/}}
+
+{{ djdd dddd ddd }}
 
 New way to define variable
 {{ $msg := `This is line one.
@@ -274,8 +285,11 @@ With variables that represent a map or object, [chain] identifiers to return the
 {{ $map := dict "a" "foo" "b" "bar" "c" "baz" }}
 {{ $map.c }} → baz
 
+{{ .name }}
+{{ ddd ddd dd }}
 {{ $homePage := .Site.Home }}
 {{ $homePage.Title }} → My Homepage
+{{ ddd ddd dd }}
 ```
 
 {{% note %}}

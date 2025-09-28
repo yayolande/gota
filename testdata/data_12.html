@@ -1,23 +1,160 @@
+roadmap:
+1. [x] fix 'with', 'block', and 'range' inner '.' var
+2. [x] fix hover error found on with/block/range's expression
+3. [ ] improve message error for else/else if/else with (anything that involve 'else')
+4. [ ] make go-to definition go up a scope on a keyword for chained multi scope (eg: if, else if, else, end)
+5. [ ] resolve 'block' template issue, as well as 'template' not accepting expression at time
+6. [ ] make group statement (scope) return partial node on error, so that error do not stop the pairing with its 'end'
+statement
+7. [ ] recognize boolean value 'true' and 'false'
+8. [ ] when invalid type value is detected from 'if/with/range', show an error error, rather than failing silently
+9. [ ] allow string to be surrounded by `` (quotation) as well
+9. [ ] template type checking not working
+9. [ ] error messages are not deterministic (position change after each execution), same for 'stringer' of types.Type
+9. [ ] 'data_07.html' has issue with template definition not showing up sometimes, as well as 'template undefined' issue
+although those templates are defined in the same file
+9. [ ] add 'break' and 'continue' action/statement into the authorized keyword ??
 
-{{ range .unspoken.series }}
- {{ . }}
+fix before release:
+1. partial group return (change how token are grouped)
+2. template error not showing sometimes
+
+
+<html>
+
+<body class="">
+	<script></script>
+	<div>
+</body>
+
+<div>
+	<section></section>
+	<section>
+</div>
+
+</html>
+
+{{ if "nana" }}
+{{ else }} // make same thing than for 'end' in regard to go-to definition
+{{ end }} // make go-to definition work on 'end', so that it bring back to group header ('if', 'range', ...)
+
+{{ $killer := "mael" }}
+{{ if . }}
+{{ . }}
+{{ else }}
+{{ $ }}
+{{ . }}
+{{ else if "name"}}
+{{ $ }}
+{{ . }}
+{{ else if $killer := "name"}}
+{{ $killer }}
+{{ $ }}
+{{ . }}
+{{ else }}
+{{ $ }}
+{{ . }}
 {{ end }}
 
+{{ the name is malik }}
+{{ "namer"}}
+{{ }}
+{{ `` }}
+
+{{ if template "name" .}}
+{{ end }}
+
+{{ .name }}
+
+{{ with .forspoken }}
+{{ . }}
+{{ magic .name .age }}
+{{ magic .age .name }}
+{{ else with "name"}}
+{{ . }}
+{{ .name }}
+{{ $.age }}
+{{ else with .unspoken }}
+{{ . }}
+{{ magic .name .age }}
+{{ else }}
+{{ . }}
+{{ .age }}
+{{ .city }}
+{{ end }}
+
+{{ .ok }}
+
+{{ $m_key := .m_key }}
+{{ $m_val := .m_val }}
+{{ $maga := .maga }}
+{{ range $m_key, $m_val = $maga }}
+{{ $}}
+{{ . }}
+{{ magic $key . }}
+{{ end }}
+
+{{ .unspoken.series }}
+{{ range .unspoken.series }}
+{{ break }}
+{{ continue }}
+{{ $.tele }}
+{{ $.unspoken }}
+{{ . }} // fixme: variable name is weird
+{{ magic . . }}
+{{ else }}
+{{ . }}
+{{ magic . 12 }}
+{{ end }}
+
+{{ range $key, $val = .unspoken.alt }}
+{{ end }}
+
+{{ range $key, = .unspoken.alt }} // this error make no sense
+{{ end }}
+
+{{ range $key, $val := .unspoken.alt }} // this one cause the lsp to crash
+{{ end }}
+
+{{ range template "name" }}
+{{ end }}
+
+{{ range $key, $val := .unspoken.alt }}
+{{ $key }}
+{{ magic $key 12 }}
+{{ magic $key $val }}
+{{ magic $key . }}
+{{ magic $key $val }}
+{{ magic "hello" $key }}
+{{ magic $val $key }}
+{{ srange $val }} {{ send }}
+{{ . }}
+{{ end }}
+
+{{ range $key, $val := $.forspoken }}
+{{ $key }} {{ }} // $key, and $val must be set to 'invalid type' ???
+{{ . }}
+{{ magic . 12 }}
+{{ srange $val}} {{ . }} {{ send }} // this make the program crash
+{{ end }}
+
+
 {{ range $index, $val := .unspoken.series }}
-	{{ . }}
-	{{ $index }}
-	{{ $val }} // to_fix: hovering this variable break the lsp
+{{ . }}
+{{ $index }}
+{{ $val }} // to_fix: hovering this variable break the lsp
 {{ end }}
 
 {{ range $val := .unspoken.series }}
-	{{ . }}
-	{{ $val }}
-	{{ $val }}
+{{ . }}
+{{ $val }}
+{{ $val }}
 {{ end }}
 
 {{ .unspoken.series }}
 
 {{ $id, $el := . }}
+{{ $id, $el, $doc := . }}
 
 {{ $ }}
 {{ . }}
@@ -55,37 +192,176 @@
 {{ magic .unspoken.alt .unspoken.alt }}
 {{ caster .nana .nana .nana }}
 
+{{ $.nana }}
+{{ range $val := $.nana }}
+{{ $key }}
+{{ $val }}
+{{ end }}
 
-{{/* go:code
-	type Input struct {
-		name	string
-		city string
-		age	int
-		unspoken struct {
-			typ int
-			name string
-			alt any
-			series []int
-		}
-	}
+{{ $melcore := $.melcore }}
+{{ $melcore }} // hover should give 'invalid type' in place of 'any'
+{{ magic $melcore 12}}
 
-	func (i Input) Stringer() Input
+{{ $arr := .arr }}
+{{ range $key, $val := $arr }}
+	{{ $key }}
+	{{ $val }}
+{{ end }}
+{{ magic . .arr  }}
+{{ range $key, $val := $arr }}
+	{{ $key }}
+	{{ $val }}
+	{{ magic $key $val }}
+	{{ magic $key . }}
+{{ end }}
 
-	func martinelli() string
-	func magic(name string, age int) string
-	func caster(name string, age int, flt float32) string
-	func carole () Input
-	func merkol (str string) Input
-*/}}
+{{ $old_key := .old_key_n }}
+{{ $old_val := .old_val_n }}
+{{ range $old_key, $old_val = .unspoken.alt }}
+	{{ $old_key }}
+	{{ $old_val }}
+	{{ magic $old_key $old_val }}
 
+	{{ range $val, $key = $.unspoken.alt }}
+	{{ end }}
+
+	{{ magic . $key }} // error here
+
+	{{ range $val, $key = $.unspoken.alt }}
+	{{ end }}
+
+	{{ magic $key . }} // error here
+	{{ magic $key $val }} // error here
+	{{ magic $val $key }} // error here
+	{{ . }} // change variable name that display on hover
+{{ end }}
+
+=====
+
+{{ $key := .key }}
+{{ $val := .val }}
+{{ }}
+{{ $billy := .billy }}
+
+{{ $_key := ._key }}
+{{ $_val := ._val }}
+{{ range $_key, $_val = .billy }}
+{{ end }}
+
+{{ range $_key, $_val = $.billy }}
+{{ end }}
+
+{{ range $_key, $_val = $billy }}
+	{{ magic $key . }}
+{{ end }}
+
+{{ dd }}
+
+{{ range $key, $val = .unspoken.alt }}
+
+{{ range $val, $key = $.unspoken.alt }}
+{{ magic . $key }} // error here
+
+{{ range $val = $.unspoken.alt }}
+{{ range $key, $val := $.unspoken.alt }}
+{{ $key }}
+{{ $val }}
+{{ . }}
+{{ magic . $key }} // error here
+
+{{ range $key, $val = $.unspoken.alt }}
+{{ end }}
+
+{{ range $val, $key = $.unspoken.alt }}
+{{ magic . $key }} // error here
+{{ end }}
+
+{{ magic . $key }} // error here
+{{ end }}
+
+{{ $val }}
+{{ $key }}
+{{ end }}
+
+{{ srange $val, . = $.unspoken.alt }} // unfortunately, this make the loop content be discarded
+{{ . }}
+{{ send }}
+{{ end }}
+
+{{ range $key, $val = $.unspoken.alt }}
+{{ end }}
+{{ magic . $key }} // error here
+
+{{ range $val, $key = $.unspoken.alt }}
+{{ end }}
+
+{{ magic $key . }} // error here
+{{ magic $key $val }} // error here
+{{ magic $val $key }} // error here
+{{ . }} // change variable name that display on hover
+{{ end }}
+
+{{ range $val, $key = .unspoken.alt }}
+{{ magic $key $val }} // error here
+{{ end }}
+
+{{ range $val, $val = .unspoken.alt }}
+{{ magic $key $val }} // error here
+{{ end }}
+
+{{ range $key, $val = .unspoken.alt }}
+{{ magic $key $val }} // error here
+{{ end }}
+
+{{ range $key, $val = .unspoken.alt }}
+{{ magic $key $val }} // error here
+{{ end }}
+
+{{- /* go:code
+// Warning: What if go:code is inside 'range' scope ?
+type xInput struct {
+name string
+city string
+age int
+unspoken struct {
+typ int
+name string
+alt any
+series []string
+}
+ok bool
+}
+
+func (i Input) Stringer() Input
+
+func martinelli() string
+func magic(name string, age int) string
+func caster(name string, age int, flt float32) string
+func carole () Input
+func merkol (str string) Input
+*/ -}}
+
+{{ jjj jjj jjj $person := . }}
 {{ $person.info.name }}
+{{ $person.info.name }}
+{{ $person.info.name }}
+
+{{ if () }}
+{{ end }}
+
 {{ $num := 123 }}
 {{ $num = 3 }}
-{{ $num = .unspoken.alt }}
+{{ $str := "ddd" }}
+{{ $str = .unspoken.alt }} // BUG: issue here
+{{ $num = .unspoken.alt }} // BUG: issue here
+{{ $num = .name }} // BUG: issue here
+{{ $num = .name }} // BUG: issue here
 {{ $any := .unspoken.alt }}
 {{ $any = 12 }}
 {{ $num }}
 {{ $any}}
+
+{{ $.city.geo }}
 
 {{ $ }}
 {{ template "meborne" . }}
@@ -96,10 +372,38 @@
 
 {{ define "alal" }}
 
-	{{ template "meborne" . }}
+{{ template "meborne" . }}
 
 {{ end }}
 
 {{ define "meborne" }}
-	{{ template "laptop" . }}
+{{ template "laptop" . }}
+{{ end }}
+
+{{ block "tmp_12" . }} // bug: this behave weirdly
+{{ end }}
+
+{{ with .unspoken }}
+{{ . }}
+{{ magic .name .age }}
+{{ else with $new_age := .unspoken.new_age }}
+{{ . }}
+{{ . }}
+{{ $name := $new_age.name }}
+{{ $age := $new_age.age }}
+
+{{ magic .name .age }}
+{{ magic $name $age }}
+{{ else with "name"}}
+{{ . }}
+{{ .name }}
+{{ $.age }}
+{{ magic . . }}
+{{ else with .unspoken }}
+{{ . }}
+{{ magic .name .age }}
+{{ else }}
+{{ . }}
+{{ .age }}
+{{ .city }}
 {{ end }}

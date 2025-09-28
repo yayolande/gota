@@ -523,7 +523,7 @@ func (h workspaceTemplateBuilder) CreateTemplateDefinition(template *parser.Grou
 		typ = TYPE_ANY.Type()
 	}
 
-	def := NewTemplateDefinition(templateName, fileName, template, template.Range(), typ, true)
+	def := NewTemplateDefinition(templateName, fileName, template, template.Range(), typ)
 
 	return def
 }
@@ -666,7 +666,7 @@ func (h *workspaceTemplateBuilder) BuildTemplateDefinition(templateScope *parser
 	file.root = templateScope
 
 	globalVariables, localVariables := NewGlobalAndLocalVariableDefinition(templateScope, templateScope.Parent(), fileName)
-	typ, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
+	typ, _, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
 
 	file.root = originalRoot
 

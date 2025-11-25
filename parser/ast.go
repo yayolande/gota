@@ -14,10 +14,11 @@ type SymbolDefinition map[string]AstNode
 type AstNode interface {
 	String() string
 	Kind() Kind
-	Range() lexer.Range
 	SetKind(val Kind)
-	DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error
-	// typeAnalysis()
+	Range() lexer.Range
+	SetRange(lexer.Range)
+	Error() *ParseError
+	SetError(err *ParseError)
 }
 
 // type Kind int
@@ -28,6 +29,7 @@ type VariableDeclarationNode struct {
 	rng           lexer.Range
 	VariableNames []*lexer.Token
 	Value         *MultiExpressionNode
+	Err           *ParseError
 }
 
 func (v VariableDeclarationNode) Kind() Kind {
@@ -38,20 +40,27 @@ func (v VariableDeclarationNode) Range() lexer.Range {
 	return v.rng
 }
 
+func (v *VariableDeclarationNode) SetRange(reach lexer.Range) {
+	v.rng = reach
+}
+
 func (v *VariableDeclarationNode) SetKind(val Kind) {
 	v.kind = val
 }
 
-func (v VariableDeclarationNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (v VariableDeclarationNode) Error() *ParseError {
+	return v.Err
 }
 
-func NewVariableDeclarationNode(kind Kind, rng lexer.Range, variables []*lexer.Token, value *MultiExpressionNode) *VariableDeclarationNode {
+func (v *VariableDeclarationNode) SetError(err *ParseError) {
+	v.Err = err
+}
+
+func NewVariableDeclarationNode(kind Kind, start, end lexer.Position, err *ParseError) *VariableDeclarationNode {
 	node := &VariableDeclarationNode{
-		kind:          kind,
-		rng:           rng,
-		Value:         value,
-		VariableNames: nil,
+		kind: kind,
+		rng:  lexer.Range{Start: start, End: end},
+		Err:  nil,
 	}
 
 	return node
@@ -61,8 +70,8 @@ type VariableAssignationNode struct {
 	kind          Kind
 	rng           lexer.Range
 	VariableNames []*lexer.Token
-	// Value	AstNode	// of type expression
-	Value *MultiExpressionNode // of type expression
+	Value         *MultiExpressionNode // of type expression
+	Err           *ParseError
 }
 
 func (v VariableAssignationNode) Kind() Kind {
@@ -73,18 +82,38 @@ func (v VariableAssignationNode) Range() lexer.Range {
 	return v.rng
 }
 
+func (v *VariableAssignationNode) SetRange(reach lexer.Range) {
+	v.rng = reach
+}
+
 func (v *VariableAssignationNode) SetKind(val Kind) {
 	v.kind = val
 }
 
-func (v VariableAssignationNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (v VariableAssignationNode) Error() *ParseError {
+	return v.Err
+}
+
+func (v *VariableAssignationNode) SetError(err *ParseError) {
+	v.Err = err
+}
+
+func NewVariableAssignmentNode(kind Kind, start, end lexer.Position, err *ParseError) *VariableAssignationNode {
+	node := &VariableAssignationNode{
+		kind:  kind,
+		rng:   lexer.Range{Start: start, End: end},
+		Err:   err,
+		Value: nil,
+	}
+
+	return node
 }
 
 type MultiExpressionNode struct {
 	kind        Kind
 	rng         lexer.Range
 	Expressions []*ExpressionNode
+	Err         *ParseError
 }
 
 func (m MultiExpressionNode) Kind() Kind {
@@ -95,18 +124,38 @@ func (m MultiExpressionNode) Range() lexer.Range {
 	return m.rng
 }
 
+func (m *MultiExpressionNode) SetRange(reach lexer.Range) {
+	m.rng = reach
+}
+
 func (m *MultiExpressionNode) SetKind(val Kind) {
 	m.kind = val
 }
 
-func (v *MultiExpressionNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (m MultiExpressionNode) Error() *ParseError {
+	return m.Err
+}
+
+func (m *MultiExpressionNode) SetError(err *ParseError) {
+	m.Err = err
+}
+
+func NewMultiExpressionNode(kind Kind, start, end lexer.Position, err *ParseError) *MultiExpressionNode {
+	node := &MultiExpressionNode{
+		kind: kind,
+		rng:  lexer.Range{Start: start, End: end},
+		Err:  err,
+	}
+
+	return node
 }
 
 type ExpressionNode struct {
-	kind    Kind
-	rng     lexer.Range
-	Symbols []*lexer.Token
+	kind           Kind
+	rng            lexer.Range
+	Symbols        []*lexer.Token
+	ExpandedTokens []AstNode
+	Err            *ParseError
 }
 
 func (v ExpressionNode) Kind() Kind {
@@ -117,12 +166,32 @@ func (v ExpressionNode) Range() lexer.Range {
 	return v.rng
 }
 
+func (v *ExpressionNode) SetRange(reach lexer.Range) {
+	v.rng = reach
+}
+
 func (v *ExpressionNode) SetKind(val Kind) {
 	v.kind = val
 }
 
-func (v ExpressionNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (v ExpressionNode) Error() *ParseError {
+	return v.Err
+}
+
+func (v *ExpressionNode) SetError(err *ParseError) {
+	v.Err = err
+}
+
+func NewExpressionNode(kind Kind, reach lexer.Range) *ExpressionNode {
+	node := &ExpressionNode{
+		kind:           kind,
+		rng:            reach,
+		Symbols:        nil,
+		Err:            nil,
+		ExpandedTokens: make([]AstNode, 0),
+	}
+
+	return node
 }
 
 type TemplateStatementNode struct {
@@ -131,6 +200,8 @@ type TemplateStatementNode struct {
 	TemplateName *lexer.Token
 	Expression   AstNode
 	parent       *GroupStatementNode
+	KeywordRange lexer.Range
+	Err          *ParseError
 }
 
 func (t TemplateStatementNode) Kind() Kind {
@@ -145,43 +216,65 @@ func (t TemplateStatementNode) Range() lexer.Range {
 	return t.rng
 }
 
+func (t *TemplateStatementNode) SetRange(reach lexer.Range) {
+	t.rng = reach
+}
+
 func (t TemplateStatementNode) Parent() *GroupStatementNode {
 	return t.parent
 }
 
-func (v TemplateStatementNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (t TemplateStatementNode) Error() *ParseError {
+	return t.Err
+}
+
+func (t *TemplateStatementNode) SetError(err *ParseError) {
+	t.Err = err
+}
+
+func NewTemplateStatementNode(kind Kind, reach lexer.Range) *TemplateStatementNode {
+	node := &TemplateStatementNode{
+		kind:   kind,
+		rng:    reach,
+		parent: nil,
+	}
+
+	return node
 }
 
 type groupStatementShortcut struct {
-	CommentGoCode *CommentNode
-
+	CommentGoCode        *CommentNode
 	VariableDeclarations map[string]*VariableDeclarationNode
-
-	TemplateDefined map[string]*GroupStatementNode
+	TemplateDefined      map[string]*GroupStatementNode
+	TemplateCallUsed     []*TemplateStatementNode
 	// TemplateCallUsed map[string]*TemplateStatementNode
-	TemplateCallUsed []*TemplateStatementNode
-	// TemplateCallUnresolved	map[string]*TemplateStatementNode
-	// TODO: remove this above 'TemplateCallUnresolved' and 'TemplateCallUsed'
-	// instead use 'TemplateCalls' to describe the union of both
 }
 
 type GroupStatementNode struct {
-	kind        Kind
+	kind        Kind // useful to know the group keyword ('if', 'with', ...)
 	rng         lexer.Range
 	parent      *GroupStatementNode // use 'isRoot' to check that the node is the ROOT
 	ControlFlow AstNode
 	Statements  []AstNode
-	// ShortcutsNode struct { TemplateDefine, TemplateUse, VarDeclaration, CommentGoCode }
-	ShortCut groupStatementShortcut
-	isRoot   bool // only this is consistently enforced to determine whether a node is ROOT or not
+	ShortCut    groupStatementShortcut
+
+	Err                *ParseError
+	KeywordRange       lexer.Range
+	KeywordToken       *lexer.Token
+	StreamToken        *lexer.StreamToken
+	NextLinkedSibling  *GroupStatementNode
+	IsProcessingHeader bool
+	isRoot             bool // only this is consistently enforced to determine whether a node is ROOT or not
 }
 
-func NewGroupStatementNode(kind Kind, reach lexer.Range) *GroupStatementNode {
+func NewGroupStatementNode(kind Kind, scopeRange lexer.Range, tokenStream *lexer.StreamToken) *GroupStatementNode {
 	scope := &GroupStatementNode{
-		kind:   kind,
-		rng:    reach,
-		isRoot: false,
+		kind:               kind,
+		rng:                scopeRange,
+		isRoot:             false,
+		IsProcessingHeader: false,
+		Err:                nil,
+		StreamToken:        tokenStream,
 	}
 
 	scope.ShortCut.TemplateDefined = make(map[string]*GroupStatementNode)
@@ -199,6 +292,10 @@ func (g GroupStatementNode) Range() lexer.Range {
 	return g.rng
 }
 
+func (g *GroupStatementNode) SetRange(reach lexer.Range) {
+	g.rng = reach
+}
+
 func (g *GroupStatementNode) SetKind(val Kind) {
 	g.kind = val
 }
@@ -209,6 +306,14 @@ func (g GroupStatementNode) Parent() *GroupStatementNode {
 
 func (g GroupStatementNode) IsRoot() bool {
 	return g.isRoot
+}
+
+func (g GroupStatementNode) Error() *ParseError {
+	return g.Err
+}
+
+func (g *GroupStatementNode) SetError(err *ParseError) {
+	g.Err = err
 }
 
 func (g GroupStatementNode) TemplateNameToken() *lexer.Token {
@@ -231,12 +336,17 @@ func (g GroupStatementNode) TemplateName() string {
 }
 
 func (g GroupStatementNode) IsTemplate() bool {
-	ok := false
-	ok = ok || g.kind == KIND_DEFINE_TEMPLATE
-	ok = ok || g.kind == KIND_BLOCK_TEMPLATE
 
-	if !ok {
+	if IsGroupNode(g.kind) == false {
 		return false
+	}
+
+	if g.isRoot {
+		return true
+	}
+
+	if g.Err != nil {
+		return true
 	}
 
 	// make the template definition follow the standard
@@ -256,6 +366,16 @@ func (g GroupStatementNode) IsTemplate() bool {
 	}
 
 	return true
+}
+
+// WARNING: The name of this function is not accurate
+func IsGroupNode(kind Kind) bool {
+	ok := false
+	ok = ok || kind == KIND_GROUP_STATEMENT
+	ok = ok || kind == KIND_DEFINE_TEMPLATE
+	ok = ok || kind == KIND_BLOCK_TEMPLATE
+
+	return ok
 }
 
 func (g GroupStatementNode) IsGroupWithControlFlow() bool {
@@ -293,24 +413,18 @@ func (g GroupStatementNode) IsGroupWithDotVariableReset() bool {
 func (g GroupStatementNode) IsGroupWithDollarAndDotVariableReset() bool {
 	switch g.kind {
 	case KIND_DEFINE_TEMPLATE, KIND_BLOCK_TEMPLATE, KIND_GROUP_STATEMENT:
-
 		return true
 	}
 
 	return false
 }
 
-func (v GroupStatementNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
-}
-
 type CommentNode struct {
-	kind  Kind
-	rng   lexer.Range
-	Value *lexer.Token
-	// GoCode			[]byte
+	kind   Kind
+	rng    lexer.Range
+	Value  *lexer.Token
 	GoCode *lexer.Token
-	// TODO: add those field for 'DefinitionAnalysis()'
+	Err    *ParseError
 }
 
 func (c CommentNode) Kind() Kind {
@@ -321,12 +435,64 @@ func (c CommentNode) Range() lexer.Range {
 	return c.rng
 }
 
-func (v *CommentNode) SetKind(val Kind) {
-	v.kind = val
+func (c *CommentNode) SetRange(reach lexer.Range) {
+	c.rng = reach
 }
 
-func (v CommentNode) DefinitionAnalysis(globalVariables, localVariables, functionDefinitions, templateDefinitionsGlobal, templateDefinitionsLocal SymbolDefinition) []lexer.Error {
-	panic("not useful anymore")
+func (c *CommentNode) SetKind(val Kind) {
+	c.kind = val
+}
+
+func (c CommentNode) Error() *ParseError {
+	return c.Err
+}
+
+func (c *CommentNode) SetError(err *ParseError) {
+	c.Err = err
+}
+
+// keyword involved: break, continue
+type SpecialCommandNode struct {
+	kind   Kind
+	rng    lexer.Range
+	Value  *lexer.Token
+	Err    *ParseError
+	Target *GroupStatementNode // must be non <nil>
+}
+
+func (s SpecialCommandNode) Kind() Kind {
+	return s.kind
+}
+
+func (s SpecialCommandNode) Range() lexer.Range {
+	return s.rng
+}
+
+func (s *SpecialCommandNode) SetRange(reach lexer.Range) {
+	s.rng = reach
+}
+
+func (s *SpecialCommandNode) SetKind(val Kind) {
+	s.kind = val
+}
+
+func (s SpecialCommandNode) Error() *ParseError {
+	return s.Err
+}
+
+func (s *SpecialCommandNode) SetError(err *ParseError) {
+	s.Err = err
+}
+
+func NewSpecialCommandNode(kind Kind, val *lexer.Token, reach lexer.Range) *SpecialCommandNode {
+	node := &SpecialCommandNode{
+		kind:  kind,
+		rng:   reach,
+		Value: val,
+		Err:   nil,
+	}
+
+	return node
 }
 
 // --------------
@@ -361,13 +527,19 @@ func Walk(action Visitor, node AstNode) {
 		}
 
 	case *TemplateStatementNode:
-		Walk(action, n.Expression)
+		if n.Expression != nil {
+			Walk(action, n.Expression)
+		}
 
 	case *VariableDeclarationNode:
-		Walk(action, n.Value)
+		if n.Value != nil {
+			Walk(action, n.Value)
+		}
 
 	case *VariableAssignationNode:
-		Walk(action, n.Value)
+		if n.Value != nil {
+			Walk(action, n.Value)
+		}
 
 	case *MultiExpressionNode:
 		for _, expression := range n.Expressions {
@@ -375,9 +547,18 @@ func Walk(action Visitor, node AstNode) {
 		}
 
 	case *ExpressionNode:
-		//	do nothing
+		for _, subexpression := range n.ExpandedTokens {
+			if subexpression == nil {
+				continue
+			}
+
+			Walk(action, subexpression)
+		}
 
 	case *CommentNode:
+		// do nothing
+
+	case *SpecialCommandNode:
 		// do nothing
 
 	default:

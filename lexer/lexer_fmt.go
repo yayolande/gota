@@ -56,10 +56,16 @@ func (k Kind) String() string {
 		str = "NOT_FOUND"
 	case UNEXPECTED:
 		str = "UNEXPECTED"
-	case	COMMA:
+	case COMMA:
 		str = "COMMA"
-	case GROUP:
-		str = "GROUP"
+	case STATIC_GROUP:
+		str = "STATIC_GROUP"
+	case EXPANDABLE_GROUP:
+		str = "EXPANDABLE_GROUP"
+	case CHARACTER:
+		str = "CHARACTER"
+	case COMPLEX_NUMBER:
+		str = "COMPLEX_NUMBER"
 	default:
 		str = fmt.Sprintf("stringer() for 'lexer.Kind' type have found an unpected value: %d", k)
 		panic(str)
@@ -79,7 +85,7 @@ func PrettyFormater[T fmt.Stringer](arr []T) string {
 		str += fmt.Sprintf("%s,", el)
 	}
 
-	str = str[:len(str) - 1]
+	str = str[:len(str)-1]
 	str += "]"
 
 	return str
@@ -89,4 +95,3 @@ func Print(tokens ...Token) {
 	str := PrettyFormater(tokens)
 	fmt.Println(str)
 }
-

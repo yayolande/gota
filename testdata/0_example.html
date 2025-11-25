@@ -1,0 +1,31 @@
+
+{{/* go:code
+	type Input struct {
+		City string
+		Country string
+	}
+
+	type Stringer struct {
+		Name string
+		Age int
+	}
+
+	func namer() Stringer
+*/}}
+
+{{ ddd }}
+
+{{ $name := "namer" }}
+{{ $nana := "" }}
+
+{{ ddd }}
+
+{{ ($name).nana }}
+{{ ($name)$nana }}
+{{ (namer)$nana }}
+{{ .() }}
+{{ .City() }}
+{{ namer }}
+{{ namer.Name }}
+{{ (namer).Name }}
+{{ (namer) }}

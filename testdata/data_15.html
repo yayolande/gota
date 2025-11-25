@@ -1,3 +1,71 @@
-
 {{ $ }}
+
+{{ 33.0 }}
+{{ 33.0i }}
+
+{{/* go:code
+type Person struct { Name string; Age int; alt any }
+func getPerson(string) *Person
+func getName() string
+func getFunc() func (string)int
+*/}}
+
+{{ if true }} {{ else dd }} {{ end }}
+{{ range i }} 
+	{{ break }}
+	{{ continue }}
+{{ end }}
+{{ break }}
+{{ continue }}
+
+{{ $person := (getPerson "noland").alt }}
+{{ (getPerson "noland").alt.halal }}
+{{ $person.alt.tla }}
+{{ (getFunc) "noland" }}
+{{ (getPerson "steveen") .Name }}
+{{ (getPerson "steveen"    ).Name.nor.no }}
+{{ (getPerson 
+"steveen"    
+).Name }}
+{{ (getPerson "steveen").name }}
+{{ (getPerson 
+ "steveen"   ).name }}
+{{ (  getPerson "steveen"     ).name.nonaly }}
+{{ (getPerson 
+ "steveen").name }}
+{{ (getName) }}
+{{ (getPerson) }}
+{{ getName }}
+{{ (getName }}
+{{ getName) }}
+
+{{ if true }} {{ end }}
+
+{{define "search_package_results"}}
+    {{range $i, $v := .Results}}
+      {{$moreLink := eq $i (subtract $.Pagination.DefaultLimit 1)}}
+    {{end}}
+{{end}}
+
+{{if }}
+{{ with }}
+{{ l (getName) }}
+{{ . }}
+{{ range}}
+{{ getName }}
+{{ . }}
+
+{{ $ok := 12 }}
+{{ $ok }}
+{{ $name := 33 }}
+{{ with $ok ($name = "carl") }}
+{{ $ok := "" }}
+{{ $ok }}
+{{ $name := "pigon" }}
+{{ $name }}
+{{ $bank }}
+{{ $bank := "continental" }}
+{{ $bank }}
+{{ . }}
+
 

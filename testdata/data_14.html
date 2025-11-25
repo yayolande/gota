@@ -10,8 +10,10 @@
 
 	{{ .name }}
 	{{ .age }}
+	{{ .bro.name }}
 	{{ magic $.name .age }}
 	{{ magic $.age .age }}
+	{{ magic .bro.name 22 }}
 	{{{ }}
 {{ end }}
 
@@ -20,6 +22,7 @@
 {{ .name }}
 {{ .age }}
 {{ .city }}
+{{ .bro }}
 
 {{ template "tpl 1" . }}
 {{ template "tpl 1" $ }}
@@ -29,3 +32,11 @@
 {{ template "tpl 1" $.name }}
 
 {{ template "tpl 1" "namerr" }}
+
+{{ define "momo" }}
+{{ . }}
+{{ template "tpl 1" "namerr" }}
+
+{{ define "momo" }}
+{{ . }}
+

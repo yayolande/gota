@@ -66,6 +66,7 @@ type Error = lexer.Error
 
 // Recursively open files from 'rootDir'.
 // However there is a depth limit for the recursion (current MAX_DEPTH = 5)
+// TODO: expand authorized file extension to '.gohtml, .gohtmpl, .tmpl, .tpl, etc.'
 func OpenProjectFiles(rootDir, withFileExtension string) map[string][]byte {
 	const maxDepth int = 5
 	var currentDepth int = 0
@@ -115,8 +116,8 @@ func openProjectFilesSafely(rootDir, withFileExtension string, currentDepth, max
 
 // Parse a file content (buffer). The output is an AST node, and an error list containing parsing error and suggestions
 func ParseSingleFile(source []byte) (*parser.GroupStatementNode, []Error) {
-	tokens, _, tokenErrs := lexer.Tokenize(source)
-	parseTree, parseErrs := parser.Parse(tokens)
+	streamsOfToken, tokenErrs := lexer.Tokenize(source)
+	parseTree, parseErrs := parser.Parse(streamsOfToken)
 
 	parseErrs = append(parseErrs, tokenErrs...)
 
@@ -130,13 +131,14 @@ func ParseFilesInWorkspace(workspaceFiles map[string][]byte) (map[string]*parser
 	parsedFilesInWorkspace := make(map[string]*parser.GroupStatementNode)
 
 	var errs []Error
+
 	for longFileName, content := range workspaceFiles {
-		tokens, _, tokenErr := lexer.Tokenize(content)
-		parseTree, parseError := parser.Parse(tokens)
+		streamsOfToken, tokenErrs := lexer.Tokenize(content)
+		parseTree, parseError := parser.Parse(streamsOfToken)
 
 		parsedFilesInWorkspace[longFileName] = parseTree
 
-		errs = append(errs, tokenErr...)
+		errs = append(errs, tokenErrs...)
 		errs = append(errs, parseError...)
 	}
 
@@ -343,14 +345,15 @@ func Hover(file *checker.FileDefinition, position lexer.Position) (string, *lexe
 		return "", nil
 	}
 
-	definition := definitions[0]
 	if len(definitions) > 1 {
 		typeStringified := "Multiple Source Found [lsp]"
 
 		return typeStringified, nil
 	}
 
+	definition := definitions[0]
 	typeStringified, reach := checker.Hover(definition)
+
 	if typeStringified == "" {
 		log.Printf("definition exist, but type was not found\n definition = %#v\n", definition)
 		panic("definition exist, but type was not found")

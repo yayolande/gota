@@ -1,38 +1,83 @@
 roadmap:
-1. [x] fix 'with', 'block', and 'range' inner '.' var
-2. [x] fix hover error found on with/block/range's expression
-3. [ ] improve message error for else/else if/else with (anything that involve 'else')
-4. [ ] make go-to definition go up a scope on a keyword for chained multi scope (eg: if, else if, else, end)
-5. [ ] resolve 'block' template issue, as well as 'template' not accepting expression at time
-6. [ ] make group statement (scope) return partial node on error, so that error do not stop the pairing with its 'end'
-statement
-7. [ ] recognize boolean value 'true' and 'false'
-8. [ ] when invalid type value is detected from 'if/with/range', show an error error, rather than failing silently
-9. [ ] allow string to be surrounded by `` (quotation) as well
-9. [ ] template type checking not working
 9. [ ] error messages are not deterministic (position change after each execution), same for 'stringer' of types.Type
 9. [ ] 'data_07.html' has issue with template definition not showing up sometimes, as well as 'template undefined' issue
 although those templates are defined in the same file
-9. [ ] add 'break' and 'continue' action/statement into the authorized keyword ??
+9. [ ] Another error at line 450, look for 'BUG' toward the bottom of the file (CRITICAL)
 
-fix before release:
-1. partial group return (change how token are grouped)
-2. template error not showing sometimes
+{{ if . }}
+{{ else with . }}
+{{ end }}
 
+{{ with . }}
+{{ else if . }}
+{{ end }}
 
-<html>
+{{ if . }}
+{{ else if . }}
+{{ else }}
+{{ else }}
+{{ else if .}}
+{{ end }}
 
-<body class="">
-	<script></script>
-	<div>
-</body>
+{{ define "yamo" }}
+	{{ if }} 
+		{{ template "tekka" }}
 
-<div>
-	<section></section>
-	<section>
-</div>
+		{{ range }}
+			{{ template "tekka" }}
+		{{ end }}
+	{{ end }}
 
-</html>
+	{{ range }}
+		{{ template "tekka" }}
+	{{ end }}
+{{ end }}
+
+{{ define "tekka" }}
+{{ end }}
+
+{{ template 23 }}
+{{ template  }}
+{{ define 23 }} {{ end }}
+
+{{ (getPerson "kalel" ).ame }}
+{{ (getPerson "kalel").Name }}
+{{ (((getPerson "kalel"))) ("nano").ame }}
+{{ $mason := getPerson (((getPerson "kalel"))) ("nano").ame }}
+{{ $mason }}
+{{ $person := getPerson "kalel" }}
+
+{{ $person.Name }}
+{{ $person.Age }}
+
+{{ getPerson$name }}
+
+{{ ` ` }}
+{{ `hello melcore` }}
+{{ "hello world" }}
+{{ 2222 }}
+{{ true }}
+{{ false }}
+{{ 34.45 }} // not working as intended
+{{ 33.04 }}
+
+{{ 3.i }}
+{{ $root := $ }}
+{{ $r_key := .any }}
+{{ $r_val := .any }}
+{{ magic $r_val $r_key }}
+{{ magic $r_val $r_key.jay }}
+{{ $makr := $r_key.jello }}
+{{ $makr }}
+
+{{ range $r_key, $r_val = $root }}
+	{{ break }}
+	{{ continue }}
+{{end}}
+
+{{ break }}
+{{ continue }}
+
 
 {{ if "nana" }}
 {{ else }} // make same thing than for 'end' in regard to go-to definition
@@ -59,7 +104,6 @@ fix before release:
 {{ the name is malik }}
 {{ "namer"}}
 {{ }}
-{{ `` }}
 
 {{ if template "name" .}}
 {{ end }}
@@ -67,31 +111,39 @@ fix before release:
 {{ .name }}
 
 {{ with .forspoken }}
-{{ . }}
-{{ magic .name .age }}
-{{ magic .age .name }}
+	{{ . }}
+	{{ magic .name .age }}
+	{{ magic .age .name }}
 {{ else with "name"}}
-{{ . }}
-{{ .name }}
-{{ $.age }}
+	{{ . }}
+	{{ .name }}
+	{{ $.age }}
 {{ else with .unspoken }}
-{{ . }}
-{{ magic .name .age }}
+	{{ . }}
+	{{ magic .name .age }}
 {{ else }}
-{{ . }}
-{{ .age }}
-{{ .city }}
+	{{ . }}
+	{{ .age }}
+	{{ .city }}
 {{ end }}
 
+{{ dddd }}
 {{ .ok }}
 
+{{ dddd }}
 {{ $m_key := .m_key }}
 {{ $m_val := .m_val }}
-{{ $maga := .maga }}
-{{ range $m_key, $m_val = $maga }}
-{{ $}}
-{{ . }}
-{{ magic $key . }}
+{{ $mage := .mage }}
+{{ range $m_key, $m_val = $mage }}
+	{{ $mage := 234.5 }}
+	{{ $}}
+	{{ . }}
+	{{ magic $key . }}
+{{ end }}
+
+{{ $ki := 0 }}
+{{ if $ki }}
+	{{ $ki := 33.3 }}
 {{ end }}
 
 {{ .unspoken.series }}
@@ -108,12 +160,14 @@ fix before release:
 {{ end }}
 
 {{ range $key, $val = .unspoken.alt }}
+	{{ break }}
 {{ end }}
 
 {{ range $key, = .unspoken.alt }} // this error make no sense
 {{ end }}
 
 {{ range $key, $val := .unspoken.alt }} // this one cause the lsp to crash
+	{{ break }}
 {{ end }}
 
 {{ range template "name" }}
@@ -243,6 +297,8 @@ fix before release:
 {{ }}
 {{ $billy := .billy }}
 
+{{ dd .dd }}
+{{ .kk }}
 {{ $_key := ._key }}
 {{ $_val := ._val }}
 {{ range $_key, $_val = .billy }}
@@ -260,32 +316,32 @@ fix before release:
 {{ range $key, $val = .unspoken.alt }}
 
 {{ range $val, $key = $.unspoken.alt }}
-{{ magic . $key }} // error here
+	{{ magic . $key }} // error here
 
-{{ range $val = $.unspoken.alt }}
-{{ range $key, $val := $.unspoken.alt }}
-{{ $key }}
-{{ $val }}
-{{ . }}
-{{ magic . $key }} // error here
+	{{ range $val = $.unspoken.alt }}
+		{{ range $key, $val := $.unspoken.alt }}
+			{{ $key }}
+			{{ $val }}
+			{{ . }}
+			{{ magic . $key }} // error here
 
-{{ range $key, $val = $.unspoken.alt }}
-{{ end }}
+			{{ range $key, $val = $.unspoken.alt }}
+			{{ end }}
 
-{{ range $val, $key = $.unspoken.alt }}
-{{ magic . $key }} // error here
-{{ end }}
+			{{ range $val, $key = $.unspoken.alt }}
+				{{ magic . $key }} // error here
+			{{ end }}
 
-{{ magic . $key }} // error here
-{{ end }}
+			{{ magic . $key }} // error here
+		{{ end }}
 
-{{ $val }}
-{{ $key }}
-{{ end }}
+		{{ $val }}
+		{{ $key }}
+	{{ end }}
 
-{{ srange $val, . = $.unspoken.alt }} // unfortunately, this make the loop content be discarded
-{{ . }}
-{{ send }}
+	{{ range $val, . = $.unspoken.alt }} // unfortunately, this make the loop content be discarded
+		{{ . }}
+	{{ end }}
 {{ end }}
 
 {{ range $key, $val = $.unspoken.alt }}
@@ -305,18 +361,6 @@ fix before release:
 {{ magic $key $val }} // error here
 {{ end }}
 
-{{ range $val, $val = .unspoken.alt }}
-{{ magic $key $val }} // error here
-{{ end }}
-
-{{ range $key, $val = .unspoken.alt }}
-{{ magic $key $val }} // error here
-{{ end }}
-
-{{ range $key, $val = .unspoken.alt }}
-{{ magic $key $val }} // error here
-{{ end }}
-
 {{- /* go:code
 // Warning: What if go:code is inside 'range' scope ?
 type xInput struct {
@@ -331,6 +375,9 @@ series []string
 }
 ok bool
 }
+
+type Person struct { Name string ; Age int }
+func getPerson (name string) *Person
 
 func (i Input) Stringer() Input
 
@@ -352,10 +399,10 @@ func merkol (str string) Input
 {{ $num := 123 }}
 {{ $num = 3 }}
 {{ $str := "ddd" }}
-{{ $str = .unspoken.alt }} // BUG: issue here
-{{ $num = .unspoken.alt }} // BUG: issue here
-{{ $num = .name }} // BUG: issue here
-{{ $num = .name }} // BUG: issue here
+{{ $str = .unspoken.alt }}
+{{ $num = .unspoken.alt }}
+{{ $num = .name }}
+{{ $num = .name }}
 {{ $any := .unspoken.alt }}
 {{ $any = 12 }}
 {{ $num }}
@@ -366,13 +413,15 @@ func merkol (str string) Input
 {{ $ }}
 {{ template "meborne" . }}
 
+
 {{ template "ee" . }}
 
 {{ $name }}
 
-{{ define "alal" }}
+{{ define "alal" jtx }}
 
 {{ template "meborne" . }}
+{{ . }}
 
 {{ end }}
 
@@ -380,20 +429,38 @@ func merkol (str string) Input
 {{ template "laptop" . }}
 {{ end }}
 
+{{ template "tmp_12" . }}
+
 {{ block "tmp_12" . }} // bug: this behave weirdly
 {{ end }}
+
+{{ magic .Name .Counter }}
+{{ magic "nono" . }}
+{{ block "tmp_1" 22 }} // bug: this behave weirdly
+	{{ magic . 44 }}
+{{ end }}
+
 
 {{ with .unspoken }}
 {{ . }}
 {{ magic .name .age }}
-{{ else with $new_age := .unspoken.new_age }}
-{{ . }}
-{{ . }}
-{{ $name := $new_age.name }}
-{{ $age := $new_age.age }}
 
-{{ magic .name .age }}
-{{ magic $name $age }}
+// BUG: WIP 
+{{ else with $new_age := .unspoken.new_age }}
+	// error on $new_age, sometimes the error appear and other time not
+	// After a quick investigation, this is because after all locals '.' var have been resolved
+	// Then '$new_age' is once again checked agains '.unspoken.new_age'
+	// In my opinion, this shouldn't be necessary since it is a variable declaration
+	// In another case, the same issue would have appeared anyway with assignment variable as well
+	// So I have to find a way to make :
+	// --> 'struct{ Age int; Name string}' equal to 'struct{ Name string; Age int}'
+	{{ . }}
+	{{ . }}
+	{{ $name := $new_age.name }}
+	{{ $age := $new_age.age }}
+
+	{{ magic .name .age }}
+	{{ magic $name $age }}
 {{ else with "name"}}
 {{ . }}
 {{ .name }}
@@ -407,3 +474,4 @@ func merkol (str string) Input
 {{ .age }}
 {{ .city }}
 {{ end }}
+

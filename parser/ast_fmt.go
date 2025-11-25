@@ -109,6 +109,10 @@ func (c CommentNode) String() string {
 	return fmt.Sprintf(`{"Kind": %s, "Range": %s, "Value": %s}`, c.kind, c.rng, value)
 }
 
+func (s SpecialCommandNode) String() string {
+	return fmt.Sprintf(`{"Kind": %s, "Range": %s, "Value": %s, "Err": "%s"}`, s.kind, s.rng, s.Value, s.Err)
+}
+
 func PrettyAstNodeFormater(nodes []AstNode) string {
 	str := ""
 
@@ -183,6 +187,10 @@ func (k Kind) String() string {
 		val = "KIND_USE_TEMPLATE"
 	case KIND_END:
 		val = "KIND_END"
+	case KIND_CONTINUE:
+		val = "KIND_CONTINUE"
+	case KIND_BREAK:
+		val = "KIND_BREAK"
 	}
 
 	return fmt.Sprintf(`"%s"`, val)

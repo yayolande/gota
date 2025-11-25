@@ -43,6 +43,52 @@ func (r Range) Contains(pos Position) bool {
 
 type Kind int
 
+type StreamToken struct {
+	Tokens                  []Token
+	Err                     *LexerError
+	rng                     Range
+	IndexFirstEqualOperator int
+}
+
+func (s StreamToken) IsEmpty() bool {
+	if len(s.Tokens) == 0 {
+		panic("token stream must at least have an 'EOL' token")
+	}
+
+	if len(s.Tokens) == 1 && s.Tokens[0].ID == EOL {
+		return true
+	}
+
+	return false
+}
+
+func (s StreamToken) String() string {
+	size := len(s.Tokens)
+
+	if size == 0 {
+		panic("token stream must at least have an 'EOL' token")
+	} else if token := s.Tokens[size-1]; token.ID != EOL {
+		panic("token stream must be terminated by an 'EOL' token")
+	}
+
+	str := ""
+	for index := range size - 1 { // ignore last #EOL token
+		tok := s.Tokens[index]
+
+		piece := string(tok.Value)
+		if tok.ID == STRING {
+			// piece = `"` + piece + `"`
+			// piece = "\"" + piece + "\""
+			// piece = "\\\"" + piece + "\\\""
+			piece = "`" + piece + "`"
+		}
+
+		str = str + " " + piece
+	}
+
+	return str[1:]
+}
+
 type Token struct {
 	ID    Kind
 	Range Range
@@ -73,6 +119,17 @@ func CloneToken(old *Token) *Token {
 	return fresh
 }
 
+func NewStreamToken(tokens []Token, err *LexerError, reach Range, loc int) *StreamToken {
+	stream := &StreamToken{
+		Tokens:                  tokens,
+		Err:                     err,
+		rng:                     reach,
+		IndexFirstEqualOperator: loc,
+	}
+
+	return stream
+}
+
 type LexerError struct {
 	Err   error
 	Range Range
@@ -97,42 +154,39 @@ type Error interface {
 // Each template pair delimitator ('{{' and '}}') represent an instruction of statement.
 // Each source code instruction is tokenized separately, and the output are tokens representing the instruction.
 // Every tokens representing an instruction always end by a 'EOL' tokens
-// To sum up, the lexer/tokenizer return an array of tokens representing all instruction all flatened.
-// The way to tell apart each instruction then is their 'EOL' separator
-func Tokenize(content []byte) (tokens []Token, failedToken []Token, errs []Error) {
+// To sum up, the lexer/tokenizer return an array of token stream representing all instruction inside a file
+func Tokenize(content []byte) (file []*StreamToken, errs []Error) {
 	if len(content) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	templateCodes, templatePositions := extractTemplateCode(content)
 
 	if templateCodes == nil {
-		return nil, nil, nil
+		return nil, nil
 	}
 
-	var endOfragment Token
+	var lineEndToken Token
 
-	for i := 0; i < len(templateCodes); i++ {
+	for i := range templateCodes {
 		code := templateCodes[i]
 		position := templatePositions[i]
 
-		// TODO: rename 'tokenizeLine()' to 'tokenizeStatement()' ? not sure, I like this one
-		fragment, tokenErrs := tokenizeLine(code, position)
+		stream, tokenErrs := tokenizeLine(code, position)
 
-		endOfragment = Token{ID: EOL, Value: []byte("#EOL"), Range: position}
-		fragment = append(fragment, endOfragment)
-
-		if tokenErrs != nil {
-			failedToken = append(failedToken, fragment...)
-			errs = append(errs, tokenErrs...)
-
-			continue
+		if stream == nil {
+			log.Printf("unexpected <nil> token stream found at end of tokenizer process\n line = %q\n fileContent = %q\n", code, content)
+			panic("unexpected <nil> token stream found at end of tokenizer process")
 		}
 
-		tokens = append(tokens, fragment...)
+		lineEndToken = Token{ID: EOL, Value: []byte("#EOL"), Range: position}
+		stream.Tokens = append(stream.Tokens, lineEndToken)
+
+		errs = append(errs, tokenErrs...)
+		file = append(file, stream)
 	}
 
-	return tokens, failedToken, errs
+	return file, errs
 }
 
 func extractTemplateCode(content []byte) ([][]byte, []Range) {
@@ -223,7 +277,7 @@ func extractTemplateCode(content []byte) ([][]byte, []Range) {
 		content = content[loc[1]:]
 	}
 
-	if bytes.Compare(ORIGINAL_CONTENT, CLONED_CONTENT) != 0 {
+	if bytes.Equal(ORIGINAL_CONTENT, CLONED_CONTENT) == false {
 		log.Printf("ORIGINAL_CONTENT = \n%q\n===================\ncontent = \n%q\n=============", ORIGINAL_CONTENT, CLONED_CONTENT)
 		panic("content of the file has changed during lexical analysis (extracting template)." +
 			"In a perfect world, it shouldn't change")
@@ -235,7 +289,7 @@ func extractTemplateCode(content []byte) ([][]byte, []Range) {
 func ConvertSingleIndexToTextEditorPosition(buffer []byte, charIndex int) Position {
 	var line, col int
 
-	for i := 0; i < len(buffer); i++ {
+	for i := range buffer {
 		if i == charIndex {
 			break
 		}
@@ -283,11 +337,7 @@ func convertRangeIndexToTextEditorPosition(editorContent []byte, rangeIndex []in
 	return position
 }
 
-func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-
+func tokenizeLine(data []byte, initialPosition Range) (*StreamToken, []Error) {
 	tokenHandler := createTokenizer()
 	data, isCommentAllowed, isTrimmed, err := handleExternalWhiteSpaceTrimmer(data, initialPosition)
 
@@ -313,6 +363,9 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 
 	var lengthDataStart int = -1
 	var currentLocalLineNumber, currentLocalColumnNumber int
+	var indexFirstEqualOperator int = -1
+
+	var parenthesisUnclosed []*Token = make([]*Token, 0, 3)
 
 	currentLocalLineNumber = initialPosition.Start.Line
 	currentLocalColumnNumber = initialPosition.Start.Character
@@ -358,15 +411,37 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 
 				text := trimSuperflousCharacter(data[0:loc[1]], pattern.ID)
 				tokenHandler.appendToken(pattern.ID, pos, text)
+				token := tokenHandler.LastToken
 
 				isPreviousTokenAcceptBindingToken = pattern.CanBeRightAfterToken
 				isCurrentTokenSeparatedFromPrevious = false
 				found = true
 				data = data[loc[1]:]
 
-				if pattern.ID == COMMENT && !isCommentAllowed {
-					err := errors.New("no white space or characters between 'comment' and '{{' or '}}'")
-					tokenHandler.appendError(err, tokenHandler.getLastInsertedToken())
+				switch pattern.ID {
+				case COMMENT:
+					if isCommentAllowed == false {
+						err := errors.New("no white space or characters between 'comment' and '{{' or '}}'")
+						tokenHandler.appendError(err, token)
+					}
+
+				case LEFT_PAREN:
+					parenthesisUnclosed = append(parenthesisUnclosed, token)
+
+				case RIGTH_PAREN:
+					size := len(parenthesisUnclosed)
+					if len(parenthesisUnclosed) == 0 {
+						// tokenHandler.appendError(errors.New("extra closing parenthesis ')'"), token)
+						tokenHandler.appendError(errors.New("missing opening parenthesis '('"), token)
+						break
+					}
+
+					parenthesisUnclosed = parenthesisUnclosed[:size-1]
+
+				case ASSIGNEMENT, DECLARATION_ASSIGNEMENT:
+					if indexFirstEqualOperator < 0 {
+						indexFirstEqualOperator = len(tokenHandler.Tokens) - 1
+					}
 				}
 
 				break
@@ -401,13 +476,13 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 			}
 
 			kindError := NOT_FOUND
-			if bytes.Compare(data[:loc[1]], []byte("{{")) == 0 || bytes.Compare(data[:loc[1]], []byte("}}")) == 0 {
+			if bytes.Equal(data[:loc[1]], []byte("{{")) || bytes.Equal(data[:loc[1]], []byte("}}")) {
 				err = errors.New("Missing matching template delimitator pair")
 				kindError = UNEXPECTED
 			}
 
 			tokenHandler.appendToken(kindError, pos, data[:loc[1]])
-			token := tokenHandler.getLastInsertedToken()
+			token := tokenHandler.LastToken
 			tokenHandler.appendError(err, token)
 
 			data = data[loc[1]:]
@@ -416,7 +491,7 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 
 	if len(data) > 0 {
 		tokenHandler.appendToken(UNEXPECTED, initialPosition, data)
-		token := tokenHandler.getLastInsertedToken()
+		token := tokenHandler.LastToken
 		tokenHandler.appendError(errors.New("unexpected character(s)"), token)
 
 		data = nil
@@ -426,7 +501,14 @@ func tokenizeLine(data []byte, initialPosition Range) ([]Token, []Error) {
 		tokenHandler.appendError(errors.New("empty template"), &Token{ID: NOT_FOUND, Range: initialPosition})
 	}
 
-	return tokenHandler.Tokens, tokenHandler.Errs
+	for _, leftParenthesis := range parenthesisUnclosed {
+		// tokenHandler.appendError(errors.New("unclosed parenthesis '('"), leftParenthesis)
+		tokenHandler.appendError(errors.New("missing closing parenthesis ')'"), leftParenthesis)
+	}
+
+	stream := NewStreamToken(tokenHandler.Tokens, tokenHandler.FirstError, initialPosition, indexFirstEqualOperator)
+
+	return stream, tokenHandler.Errs
 }
 
 // TODO: Redo comment token detection
@@ -447,19 +529,19 @@ func handleExternalWhiteSpaceTrimmer(data []byte, pos Range) ([]byte, bool, [2]b
 	// Simple comment detection : {{/* ... */}}
 	//
 	// TODO: change compare to 'equal' and use 'byte' instead of slice
-	if bytes.Compare(data[:1], []byte("/")) == 0 {
+	if bytes.Equal(data[:1], []byte("/")) {
 		isLeftCommentAllowed = true
 	}
 
 	lastElement := len(data) - 1
-	if bytes.Compare(data[lastElement:], []byte("/")) == 0 {
+	if bytes.Equal(data[lastElement:], []byte("/")) {
 		isRigthCommentAllowed = true
 	}
 
 	//
 	// Advanced Comment detection : {{- /* ... */ -}}
 	//
-	if bytes.Compare(data[lastElement:], []byte("-")) == 0 {
+	if bytes.Equal(data[lastElement:], []byte("-")) {
 		isRigthTrimmed = true
 		data = data[:lastElement] // Trim rigth '-'
 
@@ -468,7 +550,7 @@ func handleExternalWhiteSpaceTrimmer(data []byte, pos Range) ([]byte, bool, [2]b
 
 		if isOkay && bytes.ContainsAny(data[lastElement:], " \r\n\t\f\v") {
 			isOkay = lastElement > 1
-			if isOkay && bytes.Compare(data[lastElement-1:lastElement], []byte("/")) == 0 {
+			if isOkay && bytes.Equal(data[lastElement-1:lastElement], []byte("/")) {
 				isRigthCommentAllowed = true
 			}
 		} else {
@@ -482,7 +564,7 @@ func handleExternalWhiteSpaceTrimmer(data []byte, pos Range) ([]byte, bool, [2]b
 		}
 	}
 
-	if bytes.Compare(data[:1], []byte("-")) == 0 {
+	if bytes.Equal(data[:1], []byte("-")) {
 		isLeftTrimmed = true
 		data = data[1:] // Trim left '-'
 
@@ -490,7 +572,7 @@ func handleExternalWhiteSpaceTrimmer(data []byte, pos Range) ([]byte, bool, [2]b
 
 		if isOkay && bytes.ContainsAny(data[:1], " \r\n\t\f\v") {
 			isOkay = len(data) > 1
-			if isOkay && bytes.Compare(data[1:2], []byte("/")) == 0 {
+			if isOkay && bytes.Equal(data[1:2], []byte("/")) {
 				isLeftCommentAllowed = true
 			}
 		} else {
@@ -521,6 +603,8 @@ type tokenizer struct {
 	PatternToRecognize []patternToken
 	Tokens             []Token
 	Errs               []Error
+	FirstError         *LexerError
+	LastToken          *Token
 }
 
 func (t *tokenizer) appendToken(id Kind, pos Range, val []byte) {
@@ -531,35 +615,33 @@ func (t *tokenizer) appendToken(id Kind, pos Range, val []byte) {
 	}
 
 	t.Tokens = append(t.Tokens, to)
-}
-
-func (t tokenizer) getLastInsertedToken() *Token {
-	if len(t.Tokens) == 0 {
-		return nil
-	}
-
-	return &t.Tokens[len(t.Tokens)-1]
+	t.LastToken = &to
 }
 
 func (t *tokenizer) appendError(err error, token *Token) {
 	if err == nil {
-		return
+		log.Printf("line tokenizer expected an error but got <nil> while appending error\n")
+		panic("line tokenizer expected an error but got <nil> while appending error")
 	}
 
-	lexErr := LexerError{
+	lexErr := &LexerError{
 		Err:   err,
 		Token: token,
 		Range: token.Range,
 	}
 
 	t.Errs = append(t.Errs, lexErr)
+
+	if t.FirstError == nil {
+		t.FirstError = lexErr
+	}
 }
 
 func createTokenizer() *tokenizer {
 	// (tokenRecognizerPattern) Tokens' meaning: VariableName, ID (function ?), '==' '=' ':='
 	tokenPatterns := []patternToken{
 		{
-			Value: "if|else|end|range|define|template|block|with",
+			Value: "if|else|end|range|define|template|block|with|continue|break",
 			ID:    KEYWORD,
 		},
 		{
@@ -567,8 +649,30 @@ func createTokenizer() *tokenizer {
 			ID:    STRING,
 		},
 		{
-			Value: `\d*[.]\d+|\d+`,
+			Value: `\x60(?:[^\x60\n\\]|\\.)*\x60`, // \x60 == \`
+			ID:    STRING,
+		},
+		// BUG: what if the user input multiple character within delimitator ? A bug will appear
+		// Solve it later
+		{
+			Value: `'[^'\n\\]'`,
+			ID:    CHARACTER,
+		},
+		{
+			Value: `(?:\d+|\d*[.]\d+)i`,
+			ID:    COMPLEX_NUMBER,
+		},
+		{
+			Value: `\d*[.]\d+`,
+			ID:    DECIMAL,
+		},
+		{
+			Value: `\d+`,
 			ID:    NUMBER,
+		},
+		{
+			Value: "true|false",
+			ID:    BOOLEAN,
 		},
 		{
 			Value: `[$][.]?\w+(?:[.][a-zA-Z_]\w*)*|[$]`,
@@ -580,7 +684,7 @@ func createTokenizer() *tokenizer {
 		},
 		{
 			// Value: `\w+`,
-			Value: `[[:alpha:]]\w+(?:[.][[:alpha:]]\w*)*`,
+			Value: `[[:alpha:]]\w*(?:[.][[:alpha:]]\w*)*`,
 			ID:    FUNCTION,
 		},
 		{
@@ -628,6 +732,7 @@ func createTokenizer() *tokenizer {
 		PatternToRecognize: tokenPatterns,
 		Tokens:             nil,
 		Errs:               nil,
+		FirstError:         nil,
 	}
 
 	return to

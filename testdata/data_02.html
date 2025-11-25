@@ -5,7 +5,7 @@
 
 
 	// {{ define "my_fabulous_template" }} Yeah new template {{ end }}
-	{{ template "dd"  }}
+	{{ template "dd"  }} // error should appear, warning on entering infinite call
 	{{ template "tem" "" }}
 
 	return
@@ -34,14 +34,20 @@
 	// content = []byte("<p>Petterson, {{ $name : = dict \"little timmy\" 23 }} !</p>")
 	// content = []byte("<p>Petterson, {{ $name := dict \"little timmy\" 23 }} !</p>")
 	content = []byte("{{$is_user=isNotNil .user}}\npette {{if $is_user}} name : {{.user.name }} {{end}}")
-	// content = append(content, []byte("{{else if $missota := dict . | printf \"%q\" .user}} {{ .}} ")...)
+	// content = append(content, []byte("{{}} {{else if $missota := dict . | printf \"%q\" .user}} {{ .}} ")...)
 	// content = append(content, []byte("{{else if $steveen := \"name\" | convert | printf \"%t\" 23.0}}{{ else }} {{ .user.friend.name }} {{ end }} !")...)
 	content = append(content, []byte("\nd {{ range $id, $el := dict .players}} \n {{ else }} djd {{ end}}")...)
 	content = append(content, []byte("\n{{define \"lorepsum\"}} my name is {{.name}} with age {{.age}}\n {{end}}")...)
 	content = append(content, []byte("\n{{block \"book_4\" $karma := \"lost family\"}}your karma is to {{.}}{{end}}")...)
 	content = append(content, []byte("\n{{with $is_user}} are you a user {{.}} {{else with .user}} username: {{.name}}, age: {{.age}} {{end}}")...)
 
+	{{ }}
+	{{ }}
 	{{ if $nice, $el :=  }} nice day {{end}}
+	{{ if true }} {{ end }}
+	{{ else if}}
+	{{ else if }}
+	{{ end }}
 
 	// TODO: add 'Range' to root group node; differentiate between variable and function error
 	// TODO: are 'LexerError' and 'ParseError' needed ? Aren't they the same ? Not sure for now

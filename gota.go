@@ -338,17 +338,17 @@ func GoToDefinition(file *checker.FileDefinition, position lexer.Position) (file
 	return fileNames, reachs, nil
 }
 
-func Hover(file *checker.FileDefinition, position lexer.Position) (string, *lexer.Range) {
+func Hover(file *checker.FileDefinition, position lexer.Position) (string, lexer.Range) {
 	definitions := checker.FindSourceDefinitionFromPosition(file, position)
 	if len(definitions) == 0 {
 		log.Println("definition not found for token at position, ", position)
-		return "", nil
+		return "", lexer.EmptyRange()
 	}
 
 	if len(definitions) > 1 {
 		typeStringified := "Multiple Source Found [lsp]"
 
-		return typeStringified, nil
+		return typeStringified, lexer.EmptyRange()
 	}
 
 	definition := definitions[0]
@@ -360,10 +360,48 @@ func Hover(file *checker.FileDefinition, position lexer.Position) (string, *lexe
 	}
 
 	if file.FileName() != definition.FileName() {
-		return typeStringified, nil
+		return typeStringified, lexer.EmptyRange()
 	}
 
 	return typeStringified, reach
+}
+
+func FoldingRange(rootNode *parser.GroupStatementNode) ([]*parser.GroupStatementNode, []*parser.CommentNode) {
+	foldingGroups := make([]*parser.GroupStatementNode, 0, 10)
+	foldingComments := make([]*parser.CommentNode, 0, 10)
+	queue := make([]*parser.GroupStatementNode, 0, 10)
+
+	queue = append(queue, rootNode)
+	index := 0
+	counter := 0
+
+	for {
+		if counter++; counter > 10_000 {
+			panic("infinite loop while computing 'FoldingRange()'")
+		}
+
+		if index >= len(queue) { // index out of bound
+			break
+		}
+
+		scope := queue[index]
+		index++
+
+		for _, statement := range scope.Statements {
+			switch node := statement.(type) {
+			case *parser.CommentNode:
+				foldingComments = append(foldingComments, node)
+
+			case *parser.GroupStatementNode:
+				foldingGroups = append(foldingGroups, node)
+				queue = append(queue, node)
+
+			default: // do nothing
+			}
+		}
+	}
+
+	return foldingGroups, foldingComments
 }
 
 // Print in JSON format the AST node to the screen. Use a program like 'jq' for pretty formatting

@@ -41,6 +41,24 @@ func (r Range) Contains(pos Position) bool {
 	return true
 }
 
+func (r Range) IsEmpty() bool {
+	if r.Start.Line > 0 {
+		return false
+	} else if r.Start.Character > 0 {
+		return false
+	} else if r.End.Line > 0 {
+		return false
+	} else if r.End.Character > 0 {
+		return false
+	}
+
+	return true
+}
+
+func EmptyRange() Range {
+	return Range{}
+}
+
 type Kind int
 
 type StreamToken struct {

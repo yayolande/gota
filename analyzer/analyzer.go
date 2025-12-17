@@ -2745,6 +2745,7 @@ var errEmptyExpression error = errors.New("empty expression")
 var errArgumentsOnlyForFunction error = errors.New("only function and method accepts arguments")
 var errFunctionUndefined error = errors.New("function undefined")
 var errFunctionParameterSizeMismatch error = errors.New("function 'parameter' and 'argument' size mismatch")
+var errFunctionNotEnoughArguments error = errors.New("not enough arguments for function")
 var errFunctionMaxReturn error = errors.New("function cannot return more than 2 values")
 var errFunctionVoidReturn error = errors.New("function cannot have 'void' return value")
 var errFunctionSecondReturnNotError error = errors.New("function's second return value must be an 'error' only")
@@ -2802,7 +2803,6 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 	if funcType == nil {
 		err := parser.NewParseError(funcSymbol, errFunctionUndefined)
 		errs = append(errs, err)
-
 		return types.Typ[types.Invalid], nil, errs
 	}
 
@@ -2811,17 +2811,35 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 
 	paramSize := funcType.Params().Len()
 	argumentSize := len(argSymbols)
+	isVariadicFunction := funcType.Variadic()
 
-	if paramSize != argumentSize {
+	if isVariadicFunction == false && paramSize != argumentSize {
 		err := parser.NewParseError(funcSymbol, errFunctionParameterSizeMismatch)
 		errs = append(errs, err)
+		return invalidReturnType, nil, errs
 
+	} else if isVariadicFunction == true && argumentSize < paramSize {
+		err := parser.NewParseError(funcSymbol, errFunctionNotEnoughArguments)
+		errs = append(errs, err)
 		return invalidReturnType, nil, errs
 	}
 
+	lastParamIndex := paramSize - 1
+	var paramType, argumentType types.Type
+
 	for i := range len(argSymbols) {
-		paramType := funcType.Params().At(i).Type()
-		argumentType := argTypes[i]
+
+		if isVariadicFunction && i >= lastParamIndex {
+			sliceParam, ok := funcType.Params().At(lastParamIndex).Type().(*types.Slice)
+			if !ok {
+				panic("expected variadic function with last param being a slice but didn't find the slice")
+			}
+			paramType = sliceParam.Elem()
+		} else {
+			paramType = funcType.Params().At(i).Type()
+		}
+
+		argumentType = argTypes[i]
 
 		if argFuncType, ok := argumentType.(*types.Signature); ok {
 			retVals, _, localErrs := makeFunctionTypeCheck(argFuncType, argSymbols[i], []types.Type{}, []*lexer.Token{}, makeTypeInference)
@@ -2830,13 +2848,37 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 				errs = append(errs, localErrs...)
 				continue
 			}
-
 			argumentType = unTuple(retVals)[0]
 		}
 
 		// type inference processing for argument of type 'any'
+		// BUG: WIP
+		reconfigTriggeredByBuiltin := func(paramType types.Type) (types.Type, *parser.ParseError) {
+			tParam, ok := paramType.(*types.TypeParam)
+			_ = tParam
+			if ok == false {
+				return paramType, nil
+			}
+			return nil, nil
+		}
+
 		if types.Identical(argumentType, TYPE_ANY.Type()) {
 			symbol := argSymbols[i]
+
+			isBuiltinFunc := false
+			if isBuiltinFunc {
+				typ, err := reconfigTriggeredByBuiltin(paramType)
+				if err != nil {
+					return
+				}
+
+				fromArrayToSlice := func(typ types.Type) types.Type {
+					return typ
+				}
+
+				paramType = typ
+				argumentType = fromArrayToSlice(argumentType)
+			}
 
 			recheck, err := makeTypeInference(symbol, argumentType, paramType)
 			if err != nil {
@@ -2874,7 +2916,6 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 	} else if returnSize == 0 {
 		err := parser.NewParseError(funcSymbol, errFunctionVoidReturn)
 		errs = append(errs, err)
-
 	}
 
 	return funcType.Results(), variablesToRecheck, errs
@@ -3885,13 +3926,13 @@ func getBasicTypeFromTokenID(tokenId lexer.Kind) *types.Basic {
 	case lexer.DECIMAL:
 		return types.Typ[types.Float64]
 	case lexer.COMPLEX_NUMBER:
-		return types.Typ[types.Complex64]
+		return types.Typ[types.Complex128]
 	case lexer.BOOLEAN:
 		return types.Typ[types.Bool]
 	case lexer.STRING:
 		return types.Typ[types.String]
 	case lexer.CHARACTER:
-		return types.Typ[types.Rune]
+		return types.Typ[types.Int]
 	}
 
 	return nil
@@ -4102,7 +4143,7 @@ func GoToDefinition(from *lexer.Token, parentNodeStatement parser.AstNode, paren
 	return file.Name(), nil, lexer.Range{}
 }
 
-func Hover(definition NodeDefinition) (string, *lexer.Range) {
+func Hover(definition NodeDefinition) (string, lexer.Range) {
 	if definition == nil {
 		panic("Hover() do not accept <nil> definition")
 	}
@@ -4111,7 +4152,7 @@ func Hover(definition NodeDefinition) (string, *lexer.Range) {
 	typeStringified := definition.TypeString()
 	typeStringified = "```go\n" + typeStringified + "\n```"
 
-	return typeStringified, &reach
+	return typeStringified, reach
 }
 
 func goToDefinitionForFileNodeOnly(position lexer.Range) (node parser.AstNode, reach lexer.Range) {
@@ -4125,8 +4166,21 @@ func TypeCheckAgainstConstraint(candidateType, constraintType types.Type) (types
 		return candidateType, nil
 	}
 
-	if types.Identical(candidateType, constraintType) {
-		return candidateType, nil
+	switch receiver := constraintType.(type) {
+	case *types.TypeParam:
+		it, ok := receiver.Constraint().Underlying().(*types.Interface)
+		if ok == false {
+			panic("type checker expected an 'interface' within 'type parameter'. type = " + constraintType.String())
+		}
+
+		if types.Satisfies(candidateType, it) {
+			return candidateType, nil
+		}
+
+	default:
+		if types.AssignableTo(candidateType, constraintType) {
+			return candidateType, nil
+		}
 	}
 
 	err := fmt.Errorf("%w, expected '%s' but got '%s'", errTypeMismatch, constraintType, candidateType)

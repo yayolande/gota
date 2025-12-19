@@ -67,14 +67,14 @@ type Error = lexer.Error
 // Recursively open files from 'rootDir'.
 // However there is a depth limit for the recursion (current MAX_DEPTH = 5)
 // TODO: expand authorized file extension to '.gohtml, .gohtmpl, .tmpl, .tpl, etc.'
-func OpenProjectFiles(rootDir, withFileExtension string) map[string][]byte {
+func OpenProjectFiles(rootDir string, withFileExtensions []string) map[string][]byte {
 	const maxDepth int = 5
 	var currentDepth int = 0
 
-	return openProjectFilesSafely(rootDir, withFileExtension, currentDepth, maxDepth)
+	return openProjectFilesSafely(rootDir, withFileExtensions, currentDepth, maxDepth)
 }
 
-func openProjectFilesSafely(rootDir, withFileExtension string, currentDepth, maxDepth int) map[string][]byte {
+func openProjectFilesSafely(rootDir string, withFileExtensions []string, currentDepth, maxDepth int) map[string][]byte {
 	if currentDepth > maxDepth {
 		return nil
 	}
@@ -91,13 +91,13 @@ func openProjectFilesSafely(rootDir, withFileExtension string, currentDepth, max
 
 		if entry.IsDir() {
 			subDir := fileName
-			subFiles := openProjectFilesSafely(subDir, withFileExtension, currentDepth+1, maxDepth)
+			subFiles := openProjectFilesSafely(subDir, withFileExtensions, currentDepth+1, maxDepth)
 
 			maps.Copy(fileNamesToContent, subFiles)
 			continue
 		}
 
-		if !strings.HasSuffix(fileName, withFileExtension) {
+		if HasFileExtension(fileName, withFileExtensions) == false {
 			continue
 		}
 
@@ -115,12 +115,16 @@ func openProjectFilesSafely(rootDir, withFileExtension string, currentDepth, max
 }
 
 // Parse a file content (buffer). The output is an AST node, and an error list containing parsing error and suggestions
+// Returned parse tree is never 'nil', even when empty
 func ParseSingleFile(source []byte) (*parser.GroupStatementNode, []Error) {
 	streamsOfToken, tokenErrs := lexer.Tokenize(source)
+
 	parseTree, parseErrs := parser.Parse(streamsOfToken)
+	if parseTree == nil {
+		panic("root parse tree should never be <nil>, even when empty. source = " + string(source))
+	}
 
 	parseErrs = append(parseErrs, tokenErrs...)
-
 	return parseTree, parseErrs
 }
 
@@ -402,6 +406,17 @@ func FoldingRange(rootNode *parser.GroupStatementNode) ([]*parser.GroupStatement
 	}
 
 	return foldingGroups, foldingComments
+}
+
+// Report whether 'fileName' extension is found within 'extensions'
+func HasFileExtension(fileName string, extensions []string) bool {
+	for _, ext := range extensions {
+		if strings.HasSuffix(fileName, "."+ext) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Print in JSON format the AST node to the screen. Use a program like 'jq' for pretty formatting

@@ -377,15 +377,16 @@ func (p *groupMerger) safelyGroupStatement(node AstNode) *ParseError {
 }
 
 // Parse tokens into AST and return syntax errors found during the process
+// Returned parse tree is never <nil>
 func Parse(streams []*lexer.StreamToken) (*GroupStatementNode, []lexer.Error) {
-	if streams == nil {
-		return nil, nil
-	}
-
 	var errs []lexer.Error
 
 	merger := newGroupMerger()
 	parser := Parser{}
+
+	if len(streams) == 0 {
+		return merger.openedNodeStack[0], nil
+	}
 
 	// main processing
 	for _, stream := range streams {

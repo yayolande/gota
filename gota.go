@@ -370,12 +370,19 @@ func Hover(file *checker.FileDefinition, position lexer.Position) (string, lexer
 	return typeStringified, reach
 }
 
+// return folding range for groups and comments separately
+// if 'rootNode' is nil, then an empty slice is returned instead of nil
 func FoldingRange(rootNode *parser.GroupStatementNode) ([]*parser.GroupStatementNode, []*parser.CommentNode) {
 	foldingGroups := make([]*parser.GroupStatementNode, 0, 10)
 	foldingComments := make([]*parser.CommentNode, 0, 10)
-	queue := make([]*parser.GroupStatementNode, 0, 10)
 
+	if rootNode == nil {
+		return foldingGroups, foldingComments
+	}
+
+	queue := make([]*parser.GroupStatementNode, 0, 10)
 	queue = append(queue, rootNode)
+
 	index := 0
 	counter := 0
 

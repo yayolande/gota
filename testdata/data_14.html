@@ -7,14 +7,18 @@
 		type input string
 
 	*/}}
+{{ range }}
 
-	{{ .name }}
-	{{ .age }}
-	{{ .bro.name }}
-	{{ magic $.name .age }}
-	{{ magic $.age .age }}
-	{{ magic .bro.name 22 }}
-	{{{ }}
+
+
+{{ .name }}
+{{ .age }}
+{{ .bro.name }}
+{{ magic $.name .age }}
+{{ magic $.age .age }}
+{{ magic .bro.name 22 }}
+{{{ }}
+{{ end }}
 {{ end }}
 
 {{{ }}

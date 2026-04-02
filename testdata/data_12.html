@@ -1,8 +1,13 @@
 roadmap:
-9. [ ] error messages are not deterministic (position change after each execution), same for 'stringer' of types.Type
-9. [ ] 'data_07.html' has issue with template definition not showing up sometimes, as well as 'template undefined' issue
+1. [ ] error messages are not deterministic (position change after each execution), same for 'stringer' of types.Type
+2. [ ] 'data_07.html' has issue with template definition not showing up sometimes, as well as 'template undefined' issue
 although those templates are defined in the same file
-9. [ ] Another error at line 450, look for 'BUG' toward the bottom of the file (CRITICAL)
+3. [ ] Another error at line 450, look for 'BUG' toward the bottom of the file (CRITICAL)
+4. [ ] negative number not supported e.g {{ $number := -5 }}
+5. [ ] show error on private field usage. eg. this should error {{ .field }} but this one should not {{ .Field }}
+6. [ ] ambigous error message for function size mismatch between param and argument count
+7. [ ] go-to-definition on builtin function generate an error
+
 
 {{ if . }}
 {{ else with . }}
@@ -81,6 +86,7 @@ although those templates are defined in the same file
 
 {{ if "nana" }}
 {{ else }} // make same thing than for 'end' in regard to go-to definition
+ domingo
 {{ end }} // make go-to definition work on 'end', so that it bring back to group header ('if', 'range', ...)
 
 {{ $killer := "mael" }}
@@ -121,6 +127,7 @@ although those templates are defined in the same file
 {{ else with .unspoken }}
 	{{ . }}
 	{{ magic .name .age }}
+{{ else if  }}
 {{ else }}
 	{{ . }}
 	{{ .age }}
@@ -210,6 +217,7 @@ although those templates are defined in the same file
 {{ $id, $el := . }}
 {{ $id, $el, $doc := . }}
 
+{{if }}
 {{ $ }}
 {{ . }}
 {{ $.name }}
@@ -228,6 +236,10 @@ although those templates are defined in the same file
 {{ $name. }}
 {{ $12 }}
 {{ .12 }} // this should be a float
+{{ else if }}
+ddddjk
+{{ }}
+{{ end }}
 
 {{ diction }}
 {{ martinelli }}
@@ -393,7 +405,8 @@ func merkol (str string) Input
 {{ $person.info.name }}
 {{ $person.info.name }}
 
-{{ if () }}
+{{ if () }} {{ break }} {{ }} {{ }} {{ end }}
+
 {{ end }}
 
 {{ $num := 123 }}

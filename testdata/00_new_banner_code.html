@@ -1,0 +1,59 @@
+{{ }}
+{{ text := "new banner is needed" }}
+
+{{ $string := "correct var name" }} {{ $string }}
+{{ $string := "can't do this" }}
+
+{{ define "earth" }} original yolo {{ end }}
+
+{{ template "earth" }}
+{{ define "earth" }} fake yolo {{ end }}
+
+{{ "Gianis" | printf "hello %s" }}
+{{ and ( $namer := 2 ) 23 $namer | not }}
+
+{{ if and (eq 23 3.0) (len .slice) }}
+	{{ define "new_tower" }} // should show an error
+	{{ end }}
+
+	{{ template "new_tower" }}
+{{ end }}
+
+{{ define "nono" }} // to remove
+	{{ define "new_tower" }}
+	{{ end }}
+
+	{{ template "new_tower" }}
+{{ end }}
+
+{{ range }}
+{{ end }}
+{{ (getPerson "penny").Name }}
+
+if/else if/else
+range/else
+with/else
+
+{{range $k, $v := .}}
+  {{$k}}: {{printf "%#v" $v}}
+{{end}}
+{{if (gt (len (printf "%v" .Anything)) 10)}}BIG{{end}}
+{{ index (index .Deep "nested") "value" }}
+{{ index 10 2 }}
+{{ "hello world" | printf "%s!!!" | printf "%q" | html }}
+
+Hello, {{ .Name }}!
+{{ and ($namer := "steveenson") 23 $namer }}
+{{ $namer }}
+----{{ or nil 3455 }}
+{{- if 1 | eq nil }} Hello
+{{- end }}
++++++
+{{ define "base_" }}
+  {{ block "content" . }} // this okay apparently
+    Default content
+  {{ end }}
+  {{ block "hello" .}} hello {{ end }}
+{{ end }}
+
+{{ template "base_"}}

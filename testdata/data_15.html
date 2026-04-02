@@ -1,14 +1,129 @@
 {{ $ }}
-
+{{ }}
 {{ 33.0 }}
 {{ 33.0i }}
 
 {{/* go:code
+type Inputs struct {
+	Units map[string]any
+	Price any
+}
+
 type Person struct { Name string; Age int; alt any }
+func makeInt(int) int
+func makeString(string) string
+func makePerson(*Person) int
 func getPerson(string) *Person
 func getName() string
 func getFunc() func (string)int
+var number int
+func getSlice() []float64
+func setSlice([]float64) int
+func getCollection () [][]map[string]Inputs
 */}}
+
+{{ if gt (len .length ) 0 }} // there is an error here with parenthesis (hover on it)
+{{ end }}
+
+{{ len 2 }}
+{{ len .length }}
+{{ eq 2 "he" 3i 2.3 .merline }}
+{{ $helen := .helen }}
+{{ eq $helen "steveen" }}
+{{ makePerson .helen }}
+{{ eq .eqt "string" }}
+{{ $eqt := .eqt }}
+{{ $eqt = 3 }}
+
+{{ $rest := slice "hello" 23 122 }}
+{{ $rest }}
+{{ $new_m := slice getSlice 2 1 }}
+{{ $new_t := slice (index getCollection 3 4) 5 }}
+{{ $new_t }}
+{{ $gt := index "hell" 2 }}
+{{ $gta := index getSlice 2  }}
+{{ $gtb := index getCollection 2 2 "hello" }}
+{{ $gtb }}
+{{ $gcc := index getCollection 2 .nomad }}
+{{ $ia := .ia }}
+{{ $ib := .ib }}
+{{ $ic := .ic }}
+{{ $gcd := index getCollection $ia $ib $ic }}
+{{ $gcd }}
+{{ $momo := index .momo .mimi }}
+{{ $momo }}
+{{ $normi := .normi }}
+{{ $id := .id }}
+{{ $noni := index $normi $id }}
+{{ $noni }}
+{{ $mic := .michelle }}
+{{ len $mic }}
+{{ $mikey := .mikey }}
+{{ len $mikey }}
+{{ setSlice .mikey }}
+{{ $jj := index getCollection $mic $mic $mic }}
+{{ $og := len (index getCollection 2) }}
+{{ $og }}
+{{ makeInt $mic }}
+{{ makeInt .michelle }}
+{{ $jj }}
+{{ magic }}
+{{ makeInt .nomad }}
+{{ $gcc }}
+{{ $gta }}
+{{ $gt }}
+{{ $slicer_1 := slice .slicer 4 7 44 55 }}
+{{ $marigan := .marigan }}
+{{ slice $marigan 2 4 }}
+{{ $slicer_1 }}
+{{ len .kakarot }}
+{{ $new_m }}
+
+{{ $number_ := -34 }}
+{{ -34 }}
+{{ . }}
+{{ $name := .name }}
+{{ $name = "hellcat" }}
+{{ $name }}
+{{ makeInt .name }}
+{{ getPerson .name }}
+{{ (getPerson "penny").Name }}
+{{ eq "steveen" .name }}
+{{ ne 23 4.0 }}
+{{ ne 23 4 5}}
+
+
+{{ eq .mane 23 }}
+{{ eq getSlice 23 "string" }}
+{{ lt "steveen" .mane .gyokares }}
+
+{{ $merline := .merline }}
+{{ $merline }}
+{{ $merline = true }}
+
+{{ and 2 "" 2}}
+{{ or "hello" 3i }}
+{{ not 2 2}}
+{{ call 2 3 }}
+{{ call printf "hello" 3 }}
+{{ print 2 }}
+{{ printf "hello" 2 }}
+{{ html 2 }}
+{{ js 2 }}
+{{ urlquery 2 }}
+
+{{ len .Arr }}
+{{ len . }}
+{{ $first := 23 }}
+{{ $first = and "stevee" 2 }}
+{{ or "stevee" 2 }}
+
+{{ call print "hello" }}
+
+{{ $u := .Units }}
+{{ $p := .Price }}
+{{ getPerson $p }}
+
 
 {{ if true }} {{ else dd }} {{ end }}
 {{ range i }} 
@@ -67,5 +182,26 @@ func getFunc() func (string)int
 {{ $bank := "continental" }}
 {{ $bank }}
 {{ . }}
+
+{{ range }}
+{{ $namer }}
+{{ template "namer" }}
+{{if true}}
+{{ . }}
+{{ else if }}
+jjjjkk
+{{ end }}
+
+{{/* My name is marley
+ddd
+dd
+*/}}
+
+{{/* go:code
+func namer() string
+func getNumber() int
+ */}}
+
+{{ }}
 
 

@@ -666,7 +666,7 @@ func (h *workspaceTemplateBuilder) BuildTemplateDefinition(templateScope *parser
 	file.root = templateScope
 
 	globalVariables, localVariables := NewGlobalAndLocalVariableDefinition(templateScope, templateScope.Parent(), fileName)
-	typ, _, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
+	typ, _, _, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
 
 	file.root = originalRoot
 

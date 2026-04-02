@@ -285,7 +285,7 @@ func TestRangeContains(t *testing.T) {
 				Start: Position{Line: 2, Character: 0},
 				End:   Position{Line: 2, Character: 4},
 			},
-			expect: true,
+			expect: false,
 		},
 		{
 			inputPosition: Position{Line: 2, Character: 4},

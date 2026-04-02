@@ -431,34 +431,3 @@ func Print(node ...parser.AstNode) {
 	str := parser.PrettyFormater(node)
 	fmt.Println(str)
 }
-
-// TODO: This one is unused, should I remove it ?
-func getBuiltinFunctionDefinition() parser.SymbolDefinition {
-	builtinFunctionDefinition := parser.SymbolDefinition{
-		"and":      nil,
-		"call":     nil,
-		"html":     nil,
-		"index":    nil,
-		"slice":    nil,
-		"js":       nil,
-		"len":      nil,
-		"not":      nil,
-		"or":       nil,
-		"print":    nil,
-		"printf":   nil,
-		"println":  nil,
-		"urlquery": nil,
-		"eq":       nil,
-		"ne":       nil,
-		"lt":       nil,
-		"le":       nil,
-		"gt":       nil,
-		"ge":       nil,
-		"true":     nil, // unsure about this
-		"false":    nil, // unsure about this
-		"continue": nil, // unsure about this
-		"break":    nil, // uncertain about this
-	}
-
-	return builtinFunctionDefinition
-}

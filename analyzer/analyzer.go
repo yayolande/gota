@@ -26,7 +26,6 @@ var (
 	TYPE_ERROR                                                 = types.Universe.Lookup("error")
 	TEMPLATE_MANAGER            *WorkspaceTemplateManager      = nil
 	BUILTIN_FUNCTION_DEFINITION map[string]*FunctionDefinition = nil
-	// builtinFunctionDefinition map[string]*FunctionDefinition = nil
 )
 
 const (
@@ -904,18 +903,36 @@ func definitionAnalysisGroupStatement(node *parser.GroupStatementNode, _ *parser
 		}
 
 		// skip template scope analysis when already done during template dependencies analysis
-		scope, isScope := statement.(*parser.GroupStatementNode)
-		if isScope && scope.IsTemplate() && file.isTemplateGroupAlreadyAnalyzed {
+		// scope, isScope := statement.(*parser.GroupStatementNode)
+		// if isScope && scope.IsTemplate() && file.isTemplateGroupAlreadyAnalyzed {
+		if scope, isScope := statement.(*parser.GroupStatementNode); isScope {
 
-			if scope.Kind() == parser.KIND_BLOCK_TEMPLATE { // analyze the header 'expression' before skipping
-				statementType, localInferences, locaLints, localErrs = analyzeGroupStatementHeader(scope, file, scopedGlobalVariables, localVariables)
+			if template, ok := scope.ControlFlow.(*parser.TemplateStatementNode); ok {
+				templateName := string(template.TemplateName.Value)
 
-				errs = append(errs, localErrs...)
-				toLints = append(toLints, locaLints...)
-				inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, localInferences.variablesToRecheckAtEndOfScope...)
+				// Analyze template ('define' and 'block') statement that have been ignored
+				// in the template dependencies resolution phase
+				if file.root.ShortCut.TemplateDefined[templateName] == nil ||
+					file.root.ShortCut.TemplateDefined[templateName] != scope {
+
+					statementType, localInferences, locaLints, localErrs = definitionAnalysisGroupStatement(scope, node, file, scopedGlobalVariables, localVariables)
+					errs = append(errs, localErrs...)
+					toLints = append(toLints, locaLints...)
+					inferences.variablesToRecheckAtEndOfScope = append(inferences.variablesToRecheckAtEndOfScope, localInferences.variablesToRecheckAtEndOfScope...)
+				}
+
+				if scope.Kind() != parser.KIND_BLOCK_TEMPLATE {
+					continue
+
+				} else if scope.Kind() == parser.KIND_BLOCK_TEMPLATE && file.isTemplateGroupAlreadyAnalyzed == true {
+					templateExpression := parser.NewTemplateStatementNode(parser.KIND_USE_TEMPLATE, template.Range())
+					templateExpression.KeywordRange = template.KeywordRange
+					templateExpression.Expression = template.Expression
+					templateExpression.TemplateName = template.TemplateName
+
+					statement = templateExpression
+				}
 			}
-
-			continue
 		}
 
 		// Make DefinitionAnalysis for every children
@@ -1162,11 +1179,6 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 			panic("value mismatch for 'define' kind. 'TemplateStatementNode.Kind' and 'TemplateStatementNode.parent.Kind' must be similar")
 		}
 
-		if parent.Parent().IsRoot() == false {
-			err := parser.NewParseError(node.TemplateName, errors.New("template cannot be defined in local scope"))
-			errs = append(errs, err)
-		}
-
 		if node.Expression != nil {
 			err := parser.NewParseError(node.TemplateName, errors.New("'define' do not accept expression"))
 			err.Range = node.Expression.Range()
@@ -1180,22 +1192,11 @@ func definitionAnalysisTemplatateStatement(node *parser.TemplateStatementNode, p
 			panic("value mismatch for 'block' kind. 'TemplateStatementNode.Kind' and 'TemplateStatementNode.parent.Kind' must be similar")
 		}
 
-		if file.isTemplateGroupAlreadyAnalyzed == false {
-			if parent.Parent().IsRoot() == false {
-				err := parser.NewParseError(node.TemplateName, errors.New("template cannot be defined in local scope"))
-				errs = append(errs, err)
-			}
-
-			if node.Expression == nil {
-				err := parser.NewParseError(node.TemplateName, errors.New("missing expression"))
-				errs = append(errs, err)
-				return invalidTypes, inferences, toLints, errs
-			}
-
-			break
+		if node.Expression == nil {
+			err := parser.NewParseError(node.TemplateName, errors.New("missing expression"))
+			errs = append(errs, err)
+			return invalidTypes, inferences, toLints, errs
 		}
-
-		fallthrough
 
 	case parser.KIND_USE_TEMPLATE:
 		templateName := string(node.TemplateName.Value)

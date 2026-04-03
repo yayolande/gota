@@ -615,17 +615,7 @@ func (h *workspaceTemplateBuilder) BuildTemplateDefinition(templateScope *parser
 			continue
 		}
 
-		/*
-			oldDef := h.TemplateToDefinition[templateFound]
-			if oldDef != nil {
-
-				outterTemplates[templateFound] = oldDef
-				continue
-			}
-		*/
-
 		def := h.BuildTemplateDefinition(templateFound, templateNameToVisit)
-
 		outterTemplates[templateFound] = def
 	}
 
@@ -669,11 +659,8 @@ func (h *workspaceTemplateBuilder) BuildTemplateDefinition(templateScope *parser
 	typ, _, _, errs := definitionAnalysisGroupStatement(templateScope, templateScope.Parent(), file, globalVariables, localVariables)
 
 	file.root = originalRoot
-
 	h.templateManager.AnalyzedDefinedTemplatesWithinFile[fileName].TemplateErrs[templateScope] = errs
-
 	def := h.CreateTemplateDefinition(templateScope, templateName, typ[0])
-
 	h.TemplateToDefinition[templateScope] = def
 	h.TemplateVisited[templateScope] = true
 

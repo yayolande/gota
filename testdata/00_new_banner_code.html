@@ -5,26 +5,20 @@
 {{ $string := "can't do this" }}
 
 {{ define "earth" }} original yolo {{ end }}
-
 {{ template "earth" }}
 {{ define "earth" }} fake yolo {{ end }}
 
 {{ "Gianis" | printf "hello %s" }}
+{{ printf 23 34}}
 {{ and ( $namer := 2 ) 23 $namer | not }}
 
-{{ if and (eq 23 3.0) (len .slice) }}
-	{{ define "new_tower" }} // should show an error
-	{{ end }}
-
-	{{ template "new_tower" }}
+{{ define "new_tower" }}
+	{{ define "another_tower" }} {{ end }}
+	{{ block "another_tower" . }} {{ end }}
 {{ end }}
+{{ template "another_tower" . }} // out of scope template call
 
-{{ define "nono" }} // to remove
-	{{ define "new_tower" }}
-	{{ end }}
-
-	{{ template "new_tower" }}
-{{ end }}
+{{ if and (eq 23 3.0) (len .slice) }} {{ end }}
 
 {{ range }}
 {{ end }}
@@ -34,9 +28,12 @@ if/else if/else
 range/else
 with/else
 
+show type system at play (expected 'int' got 'string' type of error)
+
 {{range $k, $v := .}}
   {{$k}}: {{printf "%#v" $v}}
 {{end}}
+
 {{if (gt (len (printf "%v" .Anything)) 10)}}BIG{{end}}
 {{ index (index .Deep "nested") "value" }}
 {{ index 10 2 }}
@@ -49,11 +46,3 @@ Hello, {{ .Name }}!
 {{- if 1 | eq nil }} Hello
 {{- end }}
 +++++
-{{ define "base_" }}
-  {{ block "content" . }} // this okay apparently
-    Default content
-  {{ end }}
-  {{ block "hello" .}} hello {{ end }}
-{{ end }}
-
-{{ template "base_"}}

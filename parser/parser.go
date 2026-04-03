@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log" // TODO: to remove
+	"log/slog"
 	"strconv"
 
 	"github.com/yayolande/gota/lexer"
@@ -89,14 +90,30 @@ func appendStatementToScopeShortcut(scope *GroupStatementNode, statement AstNode
 			return nil
 		}
 
+		if templateNode.kind == KIND_DEFINE_TEMPLATE && scope.isRoot == false {
+			err := NewParseError(templateNode.TemplateName, errors.New("template cannot be defined in local space"))
+			return err
+		}
+
 		templateName := string(templateNode.TemplateName.Value)
 
-		if scope.ShortCut.TemplateDefined[templateName] != nil {
+		rootScope := scope
+		counter := 0
+		for rootScope.isRoot == false {
+			if counter++; counter > 1000 {
+				slog.Error("possible infinite loop detected while appending statement to shortcut. scope = %#v", scope)
+				panic("possible infinite loop detected while appending statement to shortcut")
+			}
+
+			rootScope = rootScope.parent
+		}
+
+		if rootScope.ShortCut.TemplateDefined[templateName] != nil {
 			err := NewParseError(templateNode.TemplateName, errors.New("template already defined"))
 			return err
 		}
 
-		scope.ShortCut.TemplateDefined[templateName] = stmt
+		rootScope.ShortCut.TemplateDefined[templateName] = stmt
 
 	case *TemplateStatementNode:
 		if stmt.TemplateName == nil {

@@ -693,6 +693,10 @@ func createTokenizer() *tokenizer {
 			ID:    BOOLEAN,
 		},
 		{
+			Value: "nil",
+			ID:    NIL,
+		},
+		{
 			Value: `[$][.]?\w+(?:[.][a-zA-Z_]\w*)*|[$]`,
 			ID:    DOLLAR_VARIABLE,
 		},

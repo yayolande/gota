@@ -1090,7 +1090,8 @@ func (p *Parser) expressionParser() (*ExpressionNode, *ParseError) {
 
 	count := 0
 	for p.accept(lexer.FUNCTION) || p.accept(lexer.DOT_VARIABLE) || p.accept(lexer.DOLLAR_VARIABLE) || p.accept(lexer.STRING) || p.accept(lexer.CHARACTER) ||
-		p.accept(lexer.LEFT_PAREN) || p.accept(lexer.RIGTH_PAREN) || p.accept(lexer.NUMBER) || p.accept(lexer.DECIMAL) || p.accept(lexer.COMPLEX_NUMBER) || p.accept(lexer.BOOLEAN) {
+		p.accept(lexer.LEFT_PAREN) || p.accept(lexer.RIGTH_PAREN) || p.accept(lexer.NUMBER) || p.accept(lexer.DECIMAL) || p.accept(lexer.COMPLEX_NUMBER) ||
+		p.accept(lexer.BOOLEAN) || p.accept(lexer.NIL) {
 
 		count++
 		if count > 100 {

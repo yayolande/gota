@@ -1,12 +1,20 @@
+{{/* go:code
+	type Person struct { Name string; Age int; Account string }
+	func getPerson(string) *Person
+	func hash_cc(string, int) string
+*/}}
+
 {{ }}
-{{ text := "new banner is needed" }}
 
 {{ $string := "correct var name" }} {{ $string }}
 {{ $string := "can't do this" }}
+{{ $.Alternative }}
+{{ text := "new banner is needed" }}
 
 {{ define "earth" }} original yolo {{ end }}
 {{ template "earth" }}
 {{ define "earth" }} fake yolo {{ end }}
+{{ }}
 
 {{ "Gianis" | printf "hello %s" }}
 {{ printf 23 34}}
@@ -15,34 +23,28 @@
 {{ define "new_tower" }}
 	{{ define "another_tower" }} {{ end }}
 	{{ block "another_tower" . }} {{ end }}
+	{{ template "earth" }}
+	{{ template "moon" }}
 {{ end }}
+
 {{ template "another_tower" . }} // out of scope template call
+{{ define "moon" }} {{ template "new_tower" }} {{ end }}
+{{ template "new_tower" }}
 
-{{ if and (eq 23 3.0) (len .slice) }} {{ end }}
+{{ if and (eq 23 3.0) (len .Slice) }} {{ end }}
+{{ (getPerson "penny").Account }}
 
-{{ range }}
-{{ end }}
-{{ (getPerson "penny").Name }}
-
-if/else if/else
-range/else
-with/else
-
-show type system at play (expected 'int' got 'string' type of error)
-
-{{range $k, $v := .}}
-  {{$k}}: {{printf "%#v" $v}}
+{{range $k, $v := .Wizards }}
+	{{$k}}: {{printf "%#v" $v}} {{ }}
+	{{ if eq $k 5 }} {{ break }} {{ end }}
+{{ else }} No wizard found
 {{end}}
 
-{{if (gt (len (printf "%v" .Anything)) 10)}}BIG{{end}}
-{{ index (index .Deep "nested") "value" }}
-{{ index 10 2 }}
-{{ "hello world" | printf "%s!!!" | printf "%q" | html }}
+{{ with $.Info }}
+	hash = {{ hash_cc .Tag .Version }}
+{{ else }} No information found ! {{ $.Info }}
+{{ end }}
 
-Hello, {{ .Name }}!
-{{ and ($namer := "steveenson") 23 $namer }}
-{{ $namer }}
-----{{ or nil 3455 }}
-{{- if 1 | eq nil }} Hello
-{{- end }}
-+++++
+{{if (gt (len (printf "%v" .Anything)) 10)}}BIG{{end}}
+{{ "hello world" | printf "%s!!!" | printf "%q" | html }}
+{{ or nil 3455 }}

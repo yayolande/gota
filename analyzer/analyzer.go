@@ -2066,6 +2066,11 @@ func (p *definitionAnalyzer) makeSymboleDefinitionAnalysis(localVariables, globa
 			processedTypes = append(processedTypes, mustGetBasicTypeFromTokenID(symbol.ID)) // Bool
 
 			p.nextToken()
+		case lexer.NIL:
+			processedToken = append(processedToken, symbol)
+			processedTypes = append(processedTypes, mustGetBasicTypeFromTokenID(symbol.ID)) // nil
+
+			p.nextToken()
 		case lexer.FUNCTION:
 
 			var fakeVarDef *VariableDefinition = nil
@@ -2750,14 +2755,16 @@ func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, nodeRang
 		symbol := symbols[0]
 		typ := typs[0]
 
-		funcType, ok := typ.(*types.Signature)
-		if ok {
-			// returnType, _, localErrs := makeFunctionTypeCheck(funcType, symbol, typs[1:], symbols[1:], makeTypeInference)
+		if funcType, ok := typ.(*types.Signature); ok {
 			returnType, _, localLints, localErrs := makeFunctionTypeCheck(funcType, symbol, typs[1:], symbols[1:], localVariables, globalVariables)
 			errs = append(errs, localErrs...)
 			toLints = append(toLints, localLints...)
-
 			return returnType, nil, toLints, errs
+
+		} else if symbol.ID == lexer.NIL {
+			err := parser.NewParseError(symbol, errors.New("'nil' must be used as function argument only"))
+			errs = append(errs, err)
+			return invalidReturn, nil, toLints, errs
 		}
 
 		expressionType := [2]types.Type{typ, TYPE_ERROR.Type()}
@@ -2772,7 +2779,6 @@ func makeExpressionTypeCheck(symbols []*lexer.Token, typs []types.Type, nodeRang
 		return invalidReturn, nil, toLints, errs
 	}
 
-	// returnType, rechecks, localErrs := makeFunctionTypeCheck(funcType, symbols[0], typs[1:], symbols[1:], makeTypeInference)
 	returnType, rechecks, toLints, localErrs := makeFunctionTypeCheck(funcType, symbols[0], typs[1:], symbols[1:], localVariables, globalVariables)
 	errs = append(errs, localErrs...)
 	variablesToRecheck = append(variablesToRecheck, rechecks...)
@@ -2787,7 +2793,6 @@ type FunctionLinter struct {
 	functionArgumentSymbols []*lexer.Token
 }
 
-// func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, argTypes []types.Type, argSymbols []*lexer.Token, makeTypeInference InferenceFunc) (resultType [2]types.Type, variablesToRecheck []*collectionPostCheckImplicitTypeNode, errs []*parser.ParseError) {
 func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, argTypes []types.Type, argSymbols []*lexer.Token, localVariables, globalVariables map[string]*VariableDefinition) (resultType [2]types.Type, variablesToRecheck []*collectionPostCheckImplicitTypeNode, toLints []*FunctionLinter, errs []*parser.ParseError) {
 	invalidReturnType := [2]types.Type{types.Typ[types.Invalid], TYPE_ERROR.Type()}
 
@@ -2836,7 +2841,6 @@ func makeFunctionTypeCheck(funcType *types.Signature, funcSymbol *lexer.Token, a
 			return invalidReturnType, nil, toLints, errs
 		}
 
-		// _, rechecks, localErrs := makeFunctionTypeCheck(newFunc, newFuncSymbol, argTypes[1:], argSymbols[1:], makeTypeInference)
 		_, rechecks, localLints, localErrs := makeFunctionTypeCheck(newFunc, newFuncSymbol, argTypes[1:], argSymbols[1:], localVariables, globalVariables)
 		variablesToRecheck = append(variablesToRecheck, rechecks...)
 		toLints = append(toLints, localLints...)
@@ -4236,6 +4240,8 @@ func getBasicTypeFromTokenID(tokenId lexer.Kind) *types.Basic {
 		return types.Typ[types.String]
 	case lexer.CHARACTER:
 		return types.Typ[types.Int]
+	case lexer.NIL:
+		return types.Typ[types.UntypedNil]
 	}
 
 	return nil
